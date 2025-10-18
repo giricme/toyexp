@@ -1,0 +1,306 @@
+"""
+Loss functions for toy experiments.
+
+Provides simple loss functions for:
+- Regression: L1 and L2 reconstruction losses
+- Flow: Flow matching loss for learning velocity fields
+"""
+
+import logging
+from typing import Optional
+
+import torch
+import torch.nn as nn
+
+logger = logging.getLogger(__name__)
+
+
+def l1_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """
+    L1 (Mean Absolute Error) loss.
+
+    Args:
+        pred: [batch, ...] predictions
+        target: [batch, ...] targets
+
+    Returns:
+        scalar loss
+    """
+    return torch.abs(pred - target).mean()
+
+
+def l2_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """
+    L2 (Mean Squared Error) loss.
+
+    Args:
+        pred: [batch, ...] predictions
+        target: [batch, ...] targets
+
+    Returns:
+        scalar loss
+    """
+    return ((pred - target) ** 2).mean()
+
+
+def flow_matching_loss(
+    model: nn.Module,
+    x_0: torch.Tensor,
+    x_1: torch.Tensor,
+    c: torch.Tensor,
+    t: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Flow matching loss for training velocity field models.
+
+    The model learns to predict the velocity field v(x_t, c, t) such that:
+    dx/dt = v(x_t, c, t)
+
+    For linear interpolation: x_t = (1-t)*x_0 + t*x_1
+    The target velocity is: v_true = x_1 - x_0
+
+    Loss: ||v_pred - v_true||^2
+
+    Args:
+        model: Model that predicts velocity v(x_t, c, t)
+        x_0: [batch, dim] initial state (typically noise or zeros)
+        x_1: [batch, dim] target state (target function values)
+        c: [batch, c_dim] conditioning variable
+        t: [batch, 1] time values in [0, 1]
+
+    Returns:
+        scalar loss
+    """
+    # Compute interpolated state
+    x_t = (1 - t) * x_0 + t * x_1
+
+    # True velocity (constant for linear interpolation)
+    v_true = x_1 - x_0
+
+    # Predict velocity
+    v_pred = model(x_t, c, t)
+
+    # MSE loss
+    return l2_loss(v_pred, v_true)
+
+
+def regression_loss(
+    model: nn.Module,
+    c: torch.Tensor,
+    target: torch.Tensor,
+    x_dim: int,
+    loss_type: str = "l2",
+) -> torch.Tensor:
+    """
+    Regression loss for direct function approximation.
+
+    Model predicts f(c) directly. To match input dimensions with flow models,
+    we pass zeros as the x input.
+
+    Args:
+        model: Model that predicts f(c) (expects x, c inputs)
+        c: [batch, c_dim] conditioning variable
+        target: [batch, output_dim] target function values
+        x_dim: Dimension of x (to create zero placeholder)
+        loss_type: 'l1' or 'l2'
+
+    Returns:
+        scalar loss
+    """
+    batch_size = c.shape[0]
+    device = c.device
+
+    # Create zero placeholder to match flow model input dimensions
+    x_zeros = torch.zeros(batch_size, x_dim, device=device)
+
+    # Predict (model expects x, c; no time for regression)
+    pred = model(x_zeros, c, t=None)
+
+    # Compute loss
+    if loss_type == "l1":
+        return l1_loss(pred, target)
+    elif loss_type == "l2":
+        return l2_loss(pred, target)
+    else:
+        raise ValueError(f"Unknown loss_type: {loss_type}. Choose 'l1' or 'l2'")
+
+
+class LossManager:
+    """
+    Manager for computing losses with automatic mode detection.
+
+    Simplifies loss computation by automatically selecting the appropriate
+    loss function based on training mode (regression vs flow).
+
+    Args:
+        mode: 'regression' or 'flow'
+        loss_type: For regression: 'l1' or 'l2'. For flow: always uses l2.
+        x_dim: Dimension of x (for creating zero placeholders in regression)
+
+    Usage:
+        loss_manager = LossManager(mode='flow', x_dim=8)
+
+        # In training loop
+        if mode == 'regression':
+            loss = loss_manager.compute_loss(model, c, target)
+        else:  # flow
+            loss = loss_manager.compute_loss(model, x_0, x_1, c, t)
+    """
+
+    def __init__(
+        self,
+        mode: str = "regression",
+        loss_type: str = "l2",
+        x_dim: Optional[int] = None,
+    ):
+        if mode not in ["regression", "flow"]:
+            raise ValueError(f"Unknown mode: {mode}. Choose 'regression' or 'flow'")
+
+        if mode == "regression" and x_dim is None:
+            raise ValueError("x_dim must be specified for regression mode")
+
+        self.mode = mode
+        self.loss_type = loss_type
+        self.x_dim = x_dim
+
+        logger.info(
+            f"LossManager initialized: mode={mode}, loss_type={loss_type}, x_dim={x_dim}"
+        )
+
+    def compute_loss(
+        self,
+        model: nn.Module,
+        *args,
+        **kwargs,
+    ) -> torch.Tensor:
+        """
+        Compute loss based on mode.
+
+        For regression mode:
+            compute_loss(model, c, target)
+
+        For flow mode:
+            compute_loss(model, x_0, x_1, c, t)
+        """
+        if self.mode == "regression":
+            if len(args) != 2:
+                raise ValueError(
+                    f"Regression mode expects 2 args (c, target), got {len(args)}"
+                )
+            c, target = args
+            return regression_loss(model, c, target, self.x_dim, self.loss_type)
+
+        elif self.mode == "flow":
+            if len(args) != 4:
+                raise ValueError(
+                    f"Flow mode expects 4 args (x_0, x_1, c, t), got {len(args)}"
+                )
+            x_0, x_1, c, t = args
+            return flow_matching_loss(model, x_0, x_1, c, t)
+
+        else:
+            raise ValueError(f"Unknown mode: {self.mode}")
+
+
+if __name__ == "__main__":
+    from networks import create_model
+
+    # Setup logging for testing
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    logger.info("Testing loss functions...")
+
+    batch_size = 4
+    dim = 8
+    c_dim = 1
+
+    # Create sample data
+    pred = torch.randn(batch_size, dim)
+    target = torch.randn(batch_size, dim)
+    x_0 = torch.randn(batch_size, dim)
+    x_1 = torch.randn(batch_size, dim)
+    c = torch.randn(batch_size, c_dim)
+    t = torch.rand(batch_size, 1)
+
+    # Test basic losses
+    logger.info("\n=== Test 1: Basic loss functions ===")
+    loss_l1 = l1_loss(pred, target)
+    loss_l2 = l2_loss(pred, target)
+    logger.info(f"L1 loss: {loss_l1.item():.6f}")
+    logger.info(f"L2 loss: {loss_l2.item():.6f}")
+    logger.info("✓ Basic losses work")
+
+    # Test flow matching loss
+    logger.info("\n=== Test 2: Flow matching loss ===")
+    model = create_model(
+        architecture="concat",
+        x_dim=dim,
+        c_dim=c_dim,
+        output_dim=dim,
+        hidden_dim=32,
+        n_layers=2,
+        activation="relu",
+        use_time=True,
+    )
+
+    loss_flow = flow_matching_loss(model, x_0, x_1, c, t)
+    logger.info(f"Flow matching loss: {loss_flow.item():.6f}")
+    logger.info("✓ Flow matching loss works")
+
+    # Test regression loss
+    logger.info("\n=== Test 3: Regression loss ===")
+    model_reg = create_model(
+        architecture="concat",
+        x_dim=dim,
+        c_dim=c_dim,
+        output_dim=dim,
+        hidden_dim=32,
+        n_layers=2,
+        activation="relu",
+        use_time=False,
+    )
+
+    loss_reg_l1 = regression_loss(model_reg, c, target, x_dim=dim, loss_type="l1")
+    loss_reg_l2 = regression_loss(model_reg, c, target, x_dim=dim, loss_type="l2")
+    logger.info(f"Regression L1 loss: {loss_reg_l1.item():.6f}")
+    logger.info(f"Regression L2 loss: {loss_reg_l2.item():.6f}")
+    logger.info("✓ Regression losses work")
+
+    # Test LossManager (regression mode)
+    logger.info("\n=== Test 4: LossManager (regression mode) ===")
+    loss_manager_reg = LossManager(mode="regression", loss_type="l2", x_dim=dim)
+    loss_managed = loss_manager_reg.compute_loss(model_reg, c, target)
+    logger.info(f"LossManager (regression): {loss_managed.item():.6f}")
+    logger.info(f"Matches direct call: {torch.allclose(loss_managed, loss_reg_l2)}")
+    logger.info("✓ LossManager works in regression mode")
+
+    # Test LossManager (flow mode)
+    logger.info("\n=== Test 5: LossManager (flow mode) ===")
+    loss_manager_flow = LossManager(mode="flow", x_dim=dim)
+    loss_managed_flow = loss_manager_flow.compute_loss(model, x_0, x_1, c, t)
+    logger.info(f"LossManager (flow): {loss_managed_flow.item():.6f}")
+    logger.info(f"Matches direct call: {torch.allclose(loss_managed_flow, loss_flow)}")
+    logger.info("✓ LossManager works in flow mode")
+
+    # Test gradient flow
+    logger.info("\n=== Test 6: Gradient flow ===")
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+    loss = flow_matching_loss(model, x_0, x_1, c, t)
+    logger.info(f"Initial loss: {loss.item():.6f}")
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    loss_after = flow_matching_loss(model, x_0, x_1, c, t)
+    logger.info(f"Loss after 1 step: {loss_after.item():.6f}")
+    logger.info(f"Loss changed: {loss_after.item() != loss.item()}")
+    logger.info("✓ Gradients flow correctly")
+
+    logger.info("\n" + "=" * 60)
+    logger.info("All loss tests passed! ✓")
+    logger.info("=" * 60)

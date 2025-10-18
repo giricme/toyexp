@@ -1,0 +1,115 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "toyexp"
+version = "0.1.0"
+description = "Toy experiments comparing regression vs flow models for function approximation"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+keywords = ["machine learning", "flow matching", "regression", "neural networks"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "torch>=2.0.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "isort>=5.12.0",
+    "flake8>=6.0",
+    "mypy>=1.0",
+    "ipython>=8.0",
+    "jupyter>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/toyexp"
+Repository = "https://github.com/yourusername/toyexp"
+Documentation = "https://github.com/yourusername/toyexp/blob/main/README.md"
+
+[tool.setuptools]
+packages = ["toyexp"]
+package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+toyexp = ["*.yaml", "configs/*.yaml"]
+
+
+[tool.black]
+line-length = 88
+target-version = ["py39"]
+skip-string-normalization = false
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+combine_as_imports = true
+force_sort_within_sections = true
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+fix = true
+
+[tool.ruff.lint]
+extend-ignore = [
+  "E203",   # handled by Black
+  "E402",   # module level import not at top of file
+  "F401",   # unused imports (common in __init__.py)
+]
+
+select = [
+  "E",      # pycodestyle errors
+  "F",      # pyflakes
+  "W",      # pycodestyle warnings
+]
+
+exclude = [
+  ".git",
+  "__pycache__",
+  "build",
+  "dist",
+  ".venv",
+  "venv",
+  ".mypy_cache",
+  ".pytest_cache",
+  "experiments",
+  "wandb",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false  # Relaxed for research code
