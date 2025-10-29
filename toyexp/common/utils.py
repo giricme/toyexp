@@ -352,82 +352,6 @@ def plot_comparison_grid(
 # =============================================================================
 
 
-def parse_override_args(args: List[str]) -> Dict:
-    """
-    Parse command-line override arguments in the format key=value.
-
-    Supports nested keys using dot notation:
-        experiment.mode=flow
-        training.learning_rate=0.01
-        dataset.num_train=100
-
-    Args:
-        args: List of override arguments
-
-    Returns:
-        Dict with nested structure for config overrides
-
-    Example:
-        >>> parse_override_args(['experiment.mode=flow', 'training.lr=0.01'])
-        {'experiment': {'mode': 'flow'}, 'training': {'lr': 0.01}}
-    """
-    overrides = {}
-
-    for arg in args:
-        if "=" not in arg:
-            logger.warning(f"Ignoring invalid override (no '='): {arg}")
-            continue
-
-        key_path, value = arg.split("=", 1)
-        keys = key_path.split(".")
-
-        # Try to convert value to appropriate type
-        value = parse_value(value)
-
-        # Build nested dict
-        current = overrides
-        for key in keys[:-1]:
-            if key not in current:
-                current[key] = {}
-            current = current[key]
-
-        current[keys[-1]] = value
-
-    return overrides
-
-
-def parse_value(value_str: str):
-    """
-    Parse a string value to appropriate Python type.
-
-    Args:
-        value_str: String value to parse
-
-    Returns:
-        Parsed value (int, float, bool, or str)
-    """
-    # Try boolean
-    if value_str.lower() in ("true", "yes", "on", "1"):
-        return True
-    if value_str.lower() in ("false", "no", "off", "0"):
-        return False
-
-    # Try int
-    try:
-        return int(value_str)
-    except ValueError:
-        pass
-
-    # Try float
-    try:
-        return float(value_str)
-    except ValueError:
-        pass
-
-    # Return as string
-    return value_str
-
-
 def build_experiment_name(
     config, mode: Optional[str] = None, seed: Optional[int] = None
 ) -> str:
@@ -471,7 +395,7 @@ if __name__ == "__main__":
     set_seed(42)
     val2 = torch.rand(3)
     assert torch.allclose(val1, val2), "Seeding failed!"
-    logger.info("✓ Seeding works")
+    logger.info("âœ“ Seeding works")
 
     # Test 2: Checkpoint save/load
     logger.info("\nTest 2: Checkpoint save/load")
@@ -523,7 +447,7 @@ if __name__ == "__main__":
         assert checkpoint["epoch"] == 10
         assert checkpoint["loss"] == 0.123
 
-    logger.info("✓ Checkpoint save/load works")
+    logger.info("âœ“ Checkpoint save/load works")
 
     # Test 3: Plotting functions
     logger.info("\nTest 3: Plotting functions")
@@ -571,40 +495,8 @@ if __name__ == "__main__":
         assert (Path(tmpdir) / "errors.png").exists()
         assert (Path(tmpdir) / "comp.png").exists()
 
-    logger.info("✓ Plotting functions work")
-
-    # Test 4: Parse override args
-    logger.info("\nTest 4: Parse override args")
-
-    args = [
-        "experiment.mode=flow",
-        "training.learning_rate=0.01",
-        "dataset.num_train=100",
-        "network.hidden_dim=512",
-        "training.use_ema=true",
-    ]
-
-    overrides = parse_override_args(args)
-
-    assert overrides["experiment"]["mode"] == "flow"
-    assert overrides["training"]["learning_rate"] == 0.01
-    assert overrides["dataset"]["num_train"] == 100
-    assert overrides["network"]["hidden_dim"] == 512
-    assert overrides["training"]["use_ema"] is True
-
-    logger.info("✓ Parse override args works")
-
-    # Test 5: Parse value types
-    logger.info("\nTest 5: Parse value types")
-
-    assert parse_value("42") == 42
-    assert parse_value("3.14") == 3.14
-    assert parse_value("true") is True
-    assert parse_value("false") is False
-    assert parse_value("hello") == "hello"
-
-    logger.info("✓ Value parsing works")
+    logger.info("âœ“ Plotting functions work")
 
     logger.info("\n" + "=" * 60)
-    logger.info("All utility tests passed! ✓")
+    logger.info("All utility tests passed! âœ“")
     logger.info("=" * 60)

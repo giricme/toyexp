@@ -51,8 +51,13 @@ training:
   
   # Initial distribution (for flow models)
   initial_dist: "zeros"  # or "gaussian"
+  
+  # MIP parameters (only used if mode='mip')
+  mip_t_star: 0.9  # Fixed time point for denoising term
 
 # Evaluation configuration
 evaluation:
   num_eval_steps: 1  # For regression, always 1. For flow, can be 10, 50, 100, etc.
   integration_method: "euler"  # or "rk4"
+  # Initial distribution for flow
+  initial_dist: "zeros"  # 'zeros' or 'gaussian'

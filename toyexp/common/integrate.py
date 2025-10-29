@@ -132,25 +132,33 @@ def integrate(
     Integrate velocity field from t_start to t_end.
 
     Unified interface for different integration methods.
-    For regression mode, just does a forward pass (no integration).
+    For regression and mip modes, just does a forward pass at t=0 (no integration).
 
     Args:
         model: Velocity field model v(x, c, t) or regression model f(x, c)
         x_0: [batch, dim] initial state
         c: [batch, c_dim] conditioning variable
-        n_steps: Number of integration steps (ignored in regression mode)
-        method: 'euler' or 'rk4' (ignored in regression mode)
-        t_start: Start time (ignored in regression mode)
-        t_end: End time (ignored in regression mode)
-        mode: 'flow' or 'regression'
+        n_steps: Number of integration steps (ignored in regression/mip modes)
+        method: 'euler' or 'rk4' (ignored in regression/mip modes)
+        t_start: Start time (ignored in regression/mip modes)
+        t_end: End time (ignored in regression/mip modes)
+        mode: 'flow', 'regression', or 'mip'
 
     Returns:
-        x_1: [batch, dim] final state (or prediction for regression)
+        x_1: [batch, dim] final state (or prediction for regression/mip)
     """
     if mode == "regression":
         # For regression, just do a forward pass (no integration)
         with torch.no_grad():
             return model(x_0, c, t=None)
+
+    elif mode == "mip":
+        # For MIP, predict at t=0 during inference (like regression)
+        batch_size = x_0.shape[0]
+        device = x_0.device
+        t_zero = torch.zeros(batch_size, 1, device=device)
+        with torch.no_grad():
+            return model(x_0, c, t_zero)
 
     elif mode == "flow":
         if method == "euler":
@@ -163,7 +171,7 @@ def integrate(
             )
 
     else:
-        raise ValueError(f"Unknown mode: {mode}. Choose 'flow' or 'regression'")
+        raise ValueError(f"Unknown mode: {mode}. Choose 'flow', 'regression', or 'mip'")
 
 
 def integrate_with_trajectory(
@@ -279,13 +287,13 @@ if __name__ == "__main__":
     logger.info(f"Initial state shape: {x_0.shape}")
     logger.info(f"Final state shape: {x_1_euler.shape}")
     logger.info(f"States are different: {not torch.allclose(x_0, x_1_euler)}")
-    logger.info("✓ Euler integration works")
+    logger.info("âœ“ Euler integration works")
 
     logger.info("\n=== Test 2: RK4 integration ===")
     x_1_rk4 = rk4_integrate(model, x_0, c, n_steps=10)
     logger.info(f"Final state shape: {x_1_rk4.shape}")
-    logger.info(f"RK4 ≠ Euler: {not torch.allclose(x_1_euler, x_1_rk4)}")
-    logger.info("✓ RK4 integration works")
+    logger.info(f"RK4 â‰  Euler: {not torch.allclose(x_1_euler, x_1_rk4)}")
+    logger.info("âœ“ RK4 integration works")
 
     logger.info("\n=== Test 3: Unified integrate() function ===")
     x_1_unified_euler = integrate(
@@ -299,7 +307,7 @@ if __name__ == "__main__":
     logger.info(
         f"Unified RK4 matches direct: {torch.allclose(x_1_rk4, x_1_unified_rk4)}"
     )
-    logger.info("✓ Unified interface works")
+    logger.info("âœ“ Unified interface works")
 
     logger.info("\n=== Test 4: Regression mode ===")
     model_reg = create_model(
@@ -315,7 +323,7 @@ if __name__ == "__main__":
 
     x_reg = integrate(model_reg, x_0, c, mode="regression")
     logger.info(f"Regression output shape: {x_reg.shape}")
-    logger.info("✓ Regression mode works")
+    logger.info("âœ“ Regression mode works")
 
     logger.info("\n=== Test 5: Integration with trajectory ===")
     x_1_traj, trajectory, times = integrate_with_trajectory(
@@ -326,13 +334,13 @@ if __name__ == "__main__":
     logger.info(f"Trajectory length: {len(trajectory)}")
     logger.info(f"Times: {[f'{t:.2f}' for t in times]}")
     logger.info(f"Expected trajectory length: {1 + 20//5} (initial + saved states)")
-    logger.info("✓ Trajectory integration works")
+    logger.info("âœ“ Trajectory integration works")
 
     logger.info("\n=== Test 6: Different step counts ===")
     for n_steps in [1, 10, 100]:
         x_1 = integrate(model, x_0, c, n_steps=n_steps, method="euler", mode="flow")
         logger.info(f"n_steps={n_steps:3d}: final state norm = {x_1.norm().item():.4f}")
-    logger.info("✓ Different step counts work")
+    logger.info("âœ“ Different step counts work")
 
     logger.info("\n=== Test 7: Custom time range ===")
     x_half = integrate(
@@ -344,8 +352,8 @@ if __name__ == "__main__":
 
     logger.info(f"Integration to t=0.5: final state norm = {x_half.norm().item():.4f}")
     logger.info(f"Integration to t=1.0: final state norm = {x_full.norm().item():.4f}")
-    logger.info("✓ Custom time ranges work")
+    logger.info("âœ“ Custom time ranges work")
 
     logger.info("\n" + "=" * 60)
-    logger.info("All integration tests passed! ✓")
+    logger.info("All integration tests passed! âœ“")
     logger.info("=" * 60)

@@ -5,10 +5,12 @@ Provides centralized logging configuration and utilities.
 All modules should import and use the logger from this module.
 """
 
+import csv
+from datetime import datetime
 import logging
 from pathlib import Path
 import sys
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 
 def setup_logging(
@@ -255,6 +257,110 @@ def log_config(config: dict, logger: Optional[logging.Logger] = None):
     logger.info("=" * 60)
 
 
+class CSVLogger:
+    """Write metrics to CSV with automatic timestamping."""
+
+    def __init__(self, filepath: Path, fieldnames: List[str]):
+        self.filepath = Path(filepath)
+        self.filepath.parent.mkdir(parents=True, exist_ok=True)
+        self.fieldnames = ["timestamp"] + fieldnames
+        self.file = None
+        self.writer = None
+        self._init_file()
+
+    def _init_file(self):
+        file_exists = self.filepath.exists()
+        self.file = open(self.filepath, "a", newline="")
+        self.writer = csv.DictWriter(self.file, fieldnames=self.fieldnames)
+        if not file_exists:
+            self.writer.writeheader()
+
+    def log(self, metrics: Dict[str, Any]):
+        """Log metrics row with timestamp."""
+        row = {"timestamp": datetime.now().isoformat(), **metrics}
+        self.writer.writerow(row)
+        self.file.flush()
+
+    def close(self):
+        if self.file:
+            self.file.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+class MetricsLogger:
+    """Manage multiple CSV loggers."""
+
+    def __init__(self, output_dir: Path):
+        self.output_dir = Path(output_dir)
+        self.loggers = {}
+
+    def add_logger(self, name: str, fieldnames: List[str]):
+        """Add a CSV logger."""
+        filepath = self.output_dir / f"{name}.csv"
+        self.loggers[name] = CSVLogger(filepath, fieldnames)
+
+    def log(self, logger_name: str, metrics: Dict[str, Any]):
+        """Log to specific CSV."""
+        self.loggers[logger_name].log(metrics)
+
+    def close_all(self):
+        for logger in self.loggers.values():
+            logger.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close_all()
+
+
+def create_metrics_logger(
+    output_dir: Path, experiment_type: str = "lie"
+) -> MetricsLogger:
+    """Factory to create MetricsLogger with standard configurations."""
+    ml = MetricsLogger(output_dir)
+
+    # Training logger (all experiments)
+    ml.add_logger("training", ["epoch", "loss"])
+
+    # Evaluation logger
+    if experiment_type == "lie":
+        ml.add_logger(
+            "evaluation",
+            [
+                "epoch",
+                "l1_error",
+                "l2_error",
+                "avg_cos_similarity",
+                "min_cos_similarity",
+                "avg_abs_cos_similarity",
+                "min_abs_cos_similarity",
+                "avg_perp_error",
+            ],
+        )
+        ml.add_logger(
+            "components",
+            [
+                "epoch",
+                "component",
+                "alpha",
+                "cos_similarity",
+                "abs_cos_similarity",
+                "perp_error_mean",
+                "perp_error_std",
+            ],
+        )
+    else:  # recon, proj
+        ml.add_logger("evaluation", ["epoch", "l1_error", "l2_error"])
+
+    return ml
+
+
 if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     logger.info("Testing logging utilities...\n")
@@ -271,7 +377,7 @@ if __name__ == "__main__":
     logger.warning("This WARNING message should appear")
     logger.error("This ERROR message should appear")
 
-    logger.info("\n✓ Basic logging works\n")
+    logger.info("\nÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Basic logging works\n")
 
     # Test 2: Get logger
     logger.info("=" * 60)
@@ -281,7 +387,7 @@ if __name__ == "__main__":
     logger2 = get_logger("test_logger")
     logger2.info("Same logger instance retrieved")
 
-    logger.info("✓ get_logger() works\n")
+    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ get_logger() works\n")
 
     # Test 3: File logging
     logger.info("=" * 60)
@@ -304,7 +410,7 @@ if __name__ == "__main__":
 
     os.unlink(log_file)
 
-    logger.info("✓ File logging works\n")
+    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ File logging works\n")
 
     # Test 4: Change log level
     logger.info("=" * 60)
@@ -317,7 +423,7 @@ if __name__ == "__main__":
     set_log_level(logging.DEBUG, "level_test")
     test_logger.debug("This SHOULD appear (level=DEBUG)")
 
-    logger.info("✓ Log level changes work\n")
+    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Log level changes work\n")
 
     # Test 5: Logger context
     logger.info("=" * 60)
@@ -332,7 +438,7 @@ if __name__ == "__main__":
 
     ctx_logger.debug("3. This should NOT appear again (back to INFO)")
 
-    logger.info("✓ Logger context works\n")
+    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Logger context works\n")
 
     # Test 6: Log model info
     logger.info("=" * 60)
@@ -351,7 +457,7 @@ if __name__ == "__main__":
     model_logger = get_logger("model_test")
     log_model_info(model, model_logger)
 
-    logger.info("\n✓ Model info logging works\n")
+    logger.info("\nÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Model info logging works\n")
 
     # Test 7: Log training step
     logger.info("=" * 60)
@@ -367,7 +473,7 @@ if __name__ == "__main__":
         logger=train_logger,
     )
 
-    logger.info("\n✓ Training step logging works\n")
+    logger.info("\nÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Training step logging works\n")
 
     # Test 8: Log evaluation
     logger.info("=" * 60)
@@ -386,7 +492,7 @@ if __name__ == "__main__":
         logger=eval_logger,
     )
 
-    logger.info("\n✓ Evaluation logging works\n")
+    logger.info("\nÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Evaluation logging works\n")
 
     # Test 9: Log config
     logger.info("=" * 60)
@@ -401,8 +507,8 @@ if __name__ == "__main__":
     }
     log_config(config, config_logger)
 
-    logger.info("\n✓ Config logging works\n")
+    logger.info("\nÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Config logging works\n")
 
     logger.info("=" * 60)
-    logger.info("All logging tests passed! ✓")
+    logger.info("All logging tests passed! ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“")
     logger.info("=" * 60)

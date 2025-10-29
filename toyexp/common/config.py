@@ -146,6 +146,137 @@ def merge_configs(base_config: Config, override_config: Dict[str, Any]) -> Confi
     return Config(merged)
 
 
+def parse_override_args(args: list[str]) -> Dict[str, Any]:
+    """
+    Parse command-line override arguments in the format key=value.
+
+    Supports nested keys using dot notation:
+        experiment.mode=flow
+        training.learning_rate=0.01
+        dataset.num_train=100
+
+    Args:
+        args: List of override arguments
+
+    Returns:
+        Dict with nested structure for config overrides
+
+    Raises:
+        ValueError: If any override format is invalid
+
+    Example:
+        >>> parse_override_args(['experiment.mode=flow', 'training.lr=0.01'])
+        {'experiment': {'mode': 'flow'}, 'training': {'lr': 0.01}}
+    """
+    overrides = {}
+
+    for arg in args:
+        if "=" not in arg:
+            raise ValueError(f"Invalid override format (missing '='): {arg}")
+
+        key_path, value = arg.split("=", 1)
+        keys = key_path.split(".")
+
+        # Try to convert value to appropriate type
+        value = _parse_value(value)
+
+        # Build nested dict
+        current = overrides
+        for key in keys[:-1]:
+            if key not in current:
+                current[key] = {}
+            current = current[key]
+
+        current[keys[-1]] = value
+
+    return overrides
+
+
+def _parse_value(value_str: str) -> Any:
+    """
+    Parse a string value to appropriate Python type.
+
+    Args:
+        value_str: String value to parse
+
+    Returns:
+        Parsed value (int, float, bool, or str)
+    """
+    # Try boolean
+    if value_str.lower() in ("true", "yes", "on", "1"):
+        return True
+    if value_str.lower() in ("false", "no", "off", "0"):
+        return False
+
+    # Try int
+    try:
+        return int(value_str)
+    except ValueError:
+        pass
+
+    # Try float
+    try:
+        return float(value_str)
+    except ValueError:
+        pass
+
+    # Return as string
+    return value_str
+
+
+def validate_overrides(
+    base_config: Dict[str, Any], overrides: Dict[str, Any], path: str = ""
+) -> None:
+    """
+    Validate that all override keys exist in the base configuration.
+
+    Args:
+        base_config: Base configuration dictionary
+        overrides: Override dictionary to validate
+        path: Current path (for error messages)
+
+    Raises:
+        ValueError: If any override key doesn't exist in base config
+    """
+    for key, value in overrides.items():
+        current_path = f"{path}.{key}" if path else key
+
+        if key not in base_config:
+            raise ValueError(
+                f"Invalid override key: '{current_path}' does not exist in config. "
+                f"Available keys at this level: {list(base_config.keys())}"
+            )
+
+        # If the value is a dict, recursively validate
+        if isinstance(value, dict):
+            if not isinstance(base_config[key], dict):
+                raise ValueError(
+                    f"Invalid override: '{current_path}' is not a nested config section"
+                )
+            validate_overrides(base_config[key], value, current_path)
+
+
+def apply_overrides(config: Config, overrides: Dict[str, Any]) -> Config:
+    """
+    Apply command-line overrides to a config, with validation.
+
+    Args:
+        config: Base configuration
+        overrides: Dictionary of overrides (from parse_override_args)
+
+    Returns:
+        New Config with overrides applied
+
+    Raises:
+        ValueError: If any override key is invalid
+    """
+    # Validate that all override keys exist
+    validate_overrides(config.to_dict(), overrides)
+
+    # Apply overrides
+    return merge_configs(config, overrides)
+
+
 def validate_config(config: Config) -> None:
     """
     Validate configuration has required fields.
@@ -165,13 +296,14 @@ def validate_config(config: Config) -> None:
     # Validate experiment section
     if "mode" not in config.experiment:
         raise ValueError("Missing experiment.mode")
-    if config.experiment.mode not in ["regression", "flow"]:
+    if config.experiment.mode not in ["regression", "flow", "mip"]:
         raise ValueError(f"Invalid mode: {config.experiment.mode}")
 
     # Validate dataset section
     if config.dataset.type not in [
         "TargetFunctionDataset",
         "ProjectedTargetFunctionDataset",
+        "LieAlgebraRotationDataset",
     ]:
         raise ValueError(f"Invalid dataset type: {config.dataset.type}")
 
@@ -184,18 +316,22 @@ def validate_config(config: Config) -> None:
         raise ValueError(f"Invalid loss type: {config.training.loss_type}")
 
     # Ensure consistency between experiment mode and loss type
-    if (
-        config.experiment.mode == "regression"
-        and config.training.loss_type not in ["l1", "l2"]
-    ):
+    if config.experiment.mode == "regression" and config.training.loss_type not in [
+        "l1",
+        "l2",
+    ]:
         logger.warning(
             "Experiment mode is 'regression' but loss type is not 'l1 or l2'"
         )
     elif (
         config.experiment.mode == "flow"
-        and config.training.loss.type != "flow_matching"
+        and config.training.loss_type != "flow_matching"
     ):
         logger.warning("Experiment mode is 'flow' but loss type is not 'flow_matching'")
+    elif (
+        config.experiment.mode == "mip" and config.training.loss_type != "flow_matching"
+    ):
+        logger.warning("Experiment mode is 'mip' but loss type is not 'flow_matching'")
 
     logger.info("Configuration validation passed")
 
