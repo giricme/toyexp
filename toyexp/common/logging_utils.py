@@ -69,7 +69,7 @@ def setup_logging(
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        file_handler = logging.FileHandler(log_file)
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
@@ -212,8 +212,9 @@ def log_evaluation(
     logger: Optional[logging.Logger] = None,
 ):
     """
+
     Log evaluation metrics with consistent formatting.
-    
+
     Filters out numpy arrays and other complex types to avoid cluttering logs.
 
     Args:
@@ -221,20 +222,22 @@ def log_evaluation(
         prefix: Prefix for log message (e.g., 'Eval', 'Test', 'Train')
         logger: Logger to use (creates default if None)
     """
+    import numpy as np
+
     if logger is None:
         logger = get_logger(__name__)
 
     logger.info(f"{prefix} Results:")
     for key, value in metrics.items():
         # Skip numpy arrays, lists, dicts, and other complex types
-        if hasattr(value, '__len__') and not isinstance(value, str):
+        if hasattr(value, "__len__") and not isinstance(value, str):
             continue  # Skip arrays, lists, dicts
-        if key.startswith('_'):  # Skip private/internal metrics
+        if key.startswith("_"):  # Skip private/internal metrics
             continue
-        
-        if isinstance(value, float):
+
+        if isinstance(value, (float, np.floating)):
             logger.info(f"  {key}: {value:.6f}")
-        elif isinstance(value, (int, str, bool)):
+        elif isinstance(value, (int, np.integer, str, bool)):
             logger.info(f"  {key}: {value}")
 
 
@@ -349,6 +352,7 @@ def create_metrics_logger(
                 "avg_abs_cos_similarity",
                 "min_abs_cos_similarity",
                 "avg_perp_error",
+                "max_perp_error",
             ],
         )
         ml.add_logger(
@@ -359,8 +363,7 @@ def create_metrics_logger(
                 "alpha",
                 "cos_similarity",
                 "abs_cos_similarity",
-                "perp_error_mean",
-                "perp_error_std",
+                "perp_error",
             ],
         )
     else:  # recon, proj
@@ -385,7 +388,9 @@ if __name__ == "__main__":
     logger.warning("This WARNING message should appear")
     logger.error("This ERROR message should appear")
 
-    logger.info("\nÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Basic logging works\n")
+    logger.info(
+        "\nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ Basic logging works\n"
+    )
 
     # Test 2: Get logger
     logger.info("=" * 60)
@@ -395,7 +400,9 @@ if __name__ == "__main__":
     logger2 = get_logger("test_logger")
     logger2.info("Same logger instance retrieved")
 
-    logger.info("ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ get_logger() works\n")
+    logger.info(
+        "ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ get_logger() works\n"
+    )
 
     # Test 3: File logging
     logger.info("=" * 60)
@@ -418,7 +425,9 @@ if __name__ == "__main__":
 
     os.unlink(log_file)
 
-    logger.info("ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ File logging works\n")
+    logger.info(
+        "ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ File logging works\n"
+    )
 
     # Test 4: Change log level
     logger.info("=" * 60)
@@ -431,7 +440,9 @@ if __name__ == "__main__":
     set_log_level(logging.DEBUG, "level_test")
     test_logger.debug("This SHOULD appear (level=DEBUG)")
 
-    logger.info("ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Log level changes work\n")
+    logger.info(
+        "ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ Log level changes work\n"
+    )
 
     # Test 5: Logger context
     logger.info("=" * 60)
@@ -446,7 +457,9 @@ if __name__ == "__main__":
 
     ctx_logger.debug("3. This should NOT appear again (back to INFO)")
 
-    logger.info("ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Logger context works\n")
+    logger.info(
+        "ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ Logger context works\n"
+    )
 
     # Test 6: Log model info
     logger.info("=" * 60)
@@ -465,7 +478,9 @@ if __name__ == "__main__":
     model_logger = get_logger("model_test")
     log_model_info(model, model_logger)
 
-    logger.info("\nÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Model info logging works\n")
+    logger.info(
+        "\nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ Model info logging works\n"
+    )
 
     # Test 7: Log training step
     logger.info("=" * 60)
@@ -481,7 +496,9 @@ if __name__ == "__main__":
         logger=train_logger,
     )
 
-    logger.info("\nÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Training step logging works\n")
+    logger.info(
+        "\nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ Training step logging works\n"
+    )
 
     # Test 8: Log evaluation
     logger.info("=" * 60)
@@ -500,7 +517,9 @@ if __name__ == "__main__":
         logger=eval_logger,
     )
 
-    logger.info("\nÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Evaluation logging works\n")
+    logger.info(
+        "\nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ Evaluation logging works\n"
+    )
 
     # Test 9: Log config
     logger.info("=" * 60)
@@ -515,8 +534,12 @@ if __name__ == "__main__":
     }
     log_config(config, config_logger)
 
-    logger.info("\nÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Config logging works\n")
+    logger.info(
+        "\nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ Config logging works\n"
+    )
 
     logger.info("=" * 60)
-    logger.info("All logging tests passed! ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ")
+    logger.info(
+        "All logging tests passed! ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“"
+    )
     logger.info("=" * 60)

@@ -169,14 +169,14 @@ def compare_methods(results_dict, save_dir=None):
 def load_component_csv(output_dir: Path):
     """
     Load per-component metrics from components.csv.
-    
+
     Returns:
         DataFrame or None if file doesn't exist
     """
     csv_path = output_dir / "components.csv"
     if not csv_path.exists():
         return None
-    
+
     try:
         df = pd.read_csv(csv_path)
         return df
@@ -188,12 +188,12 @@ def load_component_csv(output_dir: Path):
 def analyze_lie_components(results_dict, save_dir=None):
     """
     Analyze per-component metrics for Lie experiments.
-    
+
     Creates grid plots for:
     - L2 error per component
     - Cosine similarity per component
     - Perpendicular error per component
-    
+
     Args:
         results_dict: Dict mapping method names to lists of result dicts
         save_dir: Directory to save plots
@@ -201,14 +201,14 @@ def analyze_lie_components(results_dict, save_dir=None):
     if save_dir:
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Load component data from each experiment
     for method_name, results_list in results_dict.items():
         logger.info(f"\nAnalyzing components for: {method_name}")
-        
+
         # Collect component data from all seeds
         all_component_data = []
-        
+
         for result in results_list:
             exp_dir = Path(result["dir"])
             df = load_component_csv(exp_dir)
@@ -217,32 +217,40 @@ def analyze_lie_components(results_dict, save_dir=None):
                 final_epoch = df["epoch"].max()
                 final_data = df[df["epoch"] == final_epoch]
                 all_component_data.append(final_data)
-        
+
         if not all_component_data:
             logger.warning(f"No component data found for {method_name}")
             continue
-        
+
         # Combine all seeds
         combined = pd.concat(all_component_data, ignore_index=True)
-        
+
         # Group by component and compute statistics
-        stats = combined.groupby("component").agg({
-            "alpha": "first",  # Alpha is same across seeds
-            "l2_error": ["mean", "std"],
-            "cos_similarity": ["mean", "std"],
-            "abs_cos_similarity": ["mean", "std"],
-        }).reset_index()
-        
+        stats = (
+            combined.groupby("component")
+            .agg(
+                {
+                    "alpha": "first",  # Alpha is same across seeds
+                    "l2_error": ["mean", "std"],
+                    "cos_similarity": ["mean", "std"],
+                    "abs_cos_similarity": ["mean", "std"],
+                }
+            )
+            .reset_index()
+        )
+
         # Flatten column names
         stats.columns = ["_".join(col).strip("_") for col in stats.columns]
-        
+
         num_components = len(stats)
-        logger.info(f"Found {num_components} components across {len(all_component_data)} seeds")
-        
+        logger.info(
+            f"Found {num_components} components across {len(all_component_data)} seeds"
+        )
+
         # Create grid plots
         n_cols = min(4, num_components)
         n_rows = (num_components + n_cols - 1) // n_cols
-        
+
         # L2 Error Grid
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
         if num_components == 1:
@@ -251,43 +259,51 @@ def analyze_lie_components(results_dict, save_dir=None):
             axes = axes.reshape(1, -1)
         elif n_cols == 1:
             axes = axes.reshape(-1, 1)
-        
-        fig.suptitle(f"{method_name} - L2 Error per Component", fontsize=16, fontweight="bold")
-        
+
+        fig.suptitle(
+            f"{method_name} - L2 Error per Component", fontsize=16, fontweight="bold"
+        )
+
         for idx, row in stats.iterrows():
             k = int(row["component"])
             row_idx = k // n_cols
             col_idx = k % n_cols
             ax = axes[row_idx, col_idx]
-            
+
             alpha = row["alpha_first"]
             l2_mean = row["l2_error_mean"]
             l2_std = row["l2_error_std"]
-            
+
             ax.bar(0, l2_mean, yerr=l2_std, capsize=10, alpha=0.7, color="steelblue")
             ax.set_ylabel("L2 Error", fontsize=10)
             ax.set_title(rf"Component {k} ($\alpha$={alpha:.3f})", fontsize=11)
             ax.set_xticks([])
             ax.grid(True, alpha=0.3, axis="y")
-            ax.text(0, l2_mean + l2_std, f"{l2_mean:.4f}±{l2_std:.4f}", 
-                   ha="center", va="bottom", fontsize=8)
-        
+            ax.text(
+                0,
+                l2_mean + l2_std,
+                f"{l2_mean:.4f}±{l2_std:.4f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
         # Hide unused subplots
         for k in range(num_components, n_rows * n_cols):
             row_idx = k // n_cols
             col_idx = k % n_cols
             axes[row_idx, col_idx].axis("off")
-        
+
         plt.tight_layout()
-        
+
         if save_dir:
             safe_name = method_name.replace(" ", "_").replace("-", "").lower()
             save_path = save_dir / f"{safe_name}_l2_per_component.png"
             fig.savefig(save_path, dpi=150, bbox_inches="tight")
             logger.info(f"Saved L2 component grid to {save_path}")
-        
+
         plt.close(fig)
-        
+
         # Cosine Similarity Grid
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
         if num_components == 1:
@@ -296,19 +312,23 @@ def analyze_lie_components(results_dict, save_dir=None):
             axes = axes.reshape(1, -1)
         elif n_cols == 1:
             axes = axes.reshape(-1, 1)
-        
-        fig.suptitle(f"{method_name} - Cosine Similarity per Component", fontsize=16, fontweight="bold")
-        
+
+        fig.suptitle(
+            f"{method_name} - Cosine Similarity per Component",
+            fontsize=16,
+            fontweight="bold",
+        )
+
         for idx, row in stats.iterrows():
             k = int(row["component"])
             row_idx = k // n_cols
             col_idx = k % n_cols
             ax = axes[row_idx, col_idx]
-            
+
             alpha = row["alpha_first"]
             cos_mean = row["cos_similarity_mean"]
             cos_std = row["cos_similarity_std"]
-            
+
             ax.bar(0, cos_mean, yerr=cos_std, capsize=10, alpha=0.7, color="coral")
             ax.set_ylabel("Cosine Similarity", fontsize=10)
             ax.set_title(rf"Component {k} ($\alpha$={alpha:.3f})", fontsize=11)
@@ -316,25 +336,31 @@ def analyze_lie_components(results_dict, save_dir=None):
             ax.set_ylim([-1.1, 1.1])
             ax.axhline(y=0, color="black", linestyle="--", linewidth=0.5, alpha=0.5)
             ax.grid(True, alpha=0.3, axis="y")
-            ax.text(0, cos_mean + cos_std, f"{cos_mean:.4f}±{cos_std:.4f}", 
-                   ha="center", va="bottom", fontsize=8)
-        
+            ax.text(
+                0,
+                cos_mean + cos_std,
+                f"{cos_mean:.4f}±{cos_std:.4f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
         # Hide unused subplots
         for k in range(num_components, n_rows * n_cols):
             row_idx = k // n_cols
             col_idx = k % n_cols
             axes[row_idx, col_idx].axis("off")
-        
+
         plt.tight_layout()
-        
+
         if save_dir:
             safe_name = method_name.replace(" ", "_").replace("-", "").lower()
             save_path = save_dir / f"{safe_name}_cosine_per_component.png"
             fig.savefig(save_path, dpi=150, bbox_inches="tight")
             logger.info(f"Saved cosine component grid to {save_path}")
-        
+
         plt.close(fig)
-        
+
         # Absolute Cosine Similarity Grid
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
         if num_components == 1:
@@ -343,42 +369,59 @@ def analyze_lie_components(results_dict, save_dir=None):
             axes = axes.reshape(1, -1)
         elif n_cols == 1:
             axes = axes.reshape(-1, 1)
-        
-        fig.suptitle(f"{method_name} - |Cosine Similarity| per Component", fontsize=16, fontweight="bold")
-        
+
+        fig.suptitle(
+            f"{method_name} - |Cosine Similarity| per Component",
+            fontsize=16,
+            fontweight="bold",
+        )
+
         for idx, row in stats.iterrows():
             k = int(row["component"])
             row_idx = k // n_cols
             col_idx = k % n_cols
             ax = axes[row_idx, col_idx]
-            
+
             alpha = row["alpha_first"]
             abs_cos_mean = row["abs_cos_similarity_mean"]
             abs_cos_std = row["abs_cos_similarity_std"]
-            
-            ax.bar(0, abs_cos_mean, yerr=abs_cos_std, capsize=10, alpha=0.7, color="mediumseagreen")
+
+            ax.bar(
+                0,
+                abs_cos_mean,
+                yerr=abs_cos_std,
+                capsize=10,
+                alpha=0.7,
+                color="mediumseagreen",
+            )
             ax.set_ylabel("|Cosine Similarity|", fontsize=10)
             ax.set_title(rf"Component {k} ($\alpha$={alpha:.3f})", fontsize=11)
             ax.set_xticks([])
             ax.set_ylim([0, 1.1])
             ax.grid(True, alpha=0.3, axis="y")
-            ax.text(0, abs_cos_mean + abs_cos_std, f"{abs_cos_mean:.4f}±{abs_cos_std:.4f}", 
-                   ha="center", va="bottom", fontsize=8)
-        
+            ax.text(
+                0,
+                abs_cos_mean + abs_cos_std,
+                f"{abs_cos_mean:.4f}±{abs_cos_std:.4f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
         # Hide unused subplots
         for k in range(num_components, n_rows * n_cols):
             row_idx = k // n_cols
             col_idx = k % n_cols
             axes[row_idx, col_idx].axis("off")
-        
+
         plt.tight_layout()
-        
+
         if save_dir:
             safe_name = method_name.replace(" ", "_").replace("-", "").lower()
             save_path = save_dir / f"{safe_name}_abs_cosine_per_component.png"
             fig.savefig(save_path, dpi=150, bbox_inches="tight")
             logger.info(f"Saved abs cosine component grid to {save_path}")
-        
+
         plt.close(fig)
 
 
@@ -491,16 +534,12 @@ def main():
 
             for method_name, stats in summary.items():
                 f.write(f"{method_name}:\n")
-                f.write(
-                    f"  L1 Error: {stats['l1_mean']:.4f} ± {stats['l1_std']:.4f}\n"
-                )
-                f.write(
-                    f"  L2 Error: {stats['l2_mean']:.4f} ± {stats['l2_std']:.4f}\n"
-                )
+                f.write(f"  L1 Error: {stats['l1_mean']:.4f} ± {stats['l1_std']:.4f}\n")
+                f.write(f"  L2 Error: {stats['l2_mean']:.4f} ± {stats['l2_std']:.4f}\n")
                 f.write(f"  Number of seeds: {stats['num_seeds']}\n\n")
 
         logger.info(f"Saved summary to {summary_file}")
-        
+
         # Analyze Lie components if applicable
         lie_results = {k: v for k, v in all_results.items() if "Lie" in k}
         if lie_results:

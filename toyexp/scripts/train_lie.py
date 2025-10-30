@@ -183,16 +183,16 @@ def compute_perpendicular_projection_error(
 ) -> float:
     """
     Compute perpendicular projection error: ||(I - P_i) f_i|| / ||f_i||
-    
+
     where P_i projects onto the span of the manifold vector.
-    
-    This measures what fraction of the prediction lies outside the 
+
+    This measures what fraction of the prediction lies outside the
     manifold direction defined by the true rotation.
-    
+
     Args:
         pred_vec: Predicted vector [rotation_dim]
         manifold_vec: True manifold vector [rotation_dim]
-    
+
     Returns:
         Ratio of perpendicular component to total magnitude (0 to 1)
         - 0 means perfectly aligned (no perpendicular component)
@@ -201,28 +201,28 @@ def compute_perpendicular_projection_error(
     # Flatten if needed
     v_p = pred_vec.flatten()
     v_m = manifold_vec.flatten()
-    
+
     # Compute norms
     norm_pred = np.linalg.norm(v_p)
     norm_manifold = np.linalg.norm(v_m)
-    
+
     # Avoid division by zero
     if norm_pred == 0 or norm_manifold == 0:
         return 0.0
-    
+
     # Normalize manifold vector
     v_m_hat = v_m / norm_manifold
-    
-    # Project prediction onto manifold direction: P v_p = (v_m_hat · v_p) v_m_hat
+
+    # Project prediction onto manifold direction: P v_p = (v_m_hat Â· v_p) v_m_hat
     projection = np.dot(v_m_hat, v_p) * v_m_hat
-    
+
     # Compute perpendicular component: (I - P) v_p = v_p - P v_p
     perpendicular = v_p - projection
-    
+
     # Compute ratio
     perp_norm = np.linalg.norm(perpendicular)
     ratio = perp_norm / norm_pred
-    
+
     return ratio
 
 
@@ -269,7 +269,7 @@ def evaluate(model, dataset, device, config):
 
     # Compute cosine similarity metrics
     if config.evaluation.get("compute_cosine_similarity", True):
-        # Get manifold vectors: exp(ÃƒÆ’Ã†â€™Ãƒâ€¦Ã‚Â½ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂµÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â·c ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· A) ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· eÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â
+        # Get manifold vectors: exp(ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â½ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂµÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â·c ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· A) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· eÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â
         c_vals_np = c_eval.cpu().numpy().flatten()
         manifold_vecs = dataset.get_manifold_vectors(
             c_vals_np
@@ -294,13 +294,15 @@ def evaluate(model, dataset, device, config):
             for i in range(len(c_vals_np)):
                 cos_sim = compute_cosine_similarity(manifold_k[i], pred_k[i])
                 cos_sims_k.append(cos_sim)
-                
-                perp_err = compute_perpendicular_projection_error(pred_k[i], manifold_k[i])
+
+                perp_err = compute_perpendicular_projection_error(
+                    pred_k[i], manifold_k[i]
+                )
                 perp_errs_k.append(perp_err)
 
             avg_cos_sim_k = np.mean(cos_sims_k)
             cos_similarities.append(avg_cos_sim_k)
-            
+
             avg_perp_err_k = np.mean(perp_errs_k)
             perp_errors.append(avg_perp_err_k)
 
@@ -308,7 +310,7 @@ def evaluate(model, dataset, device, config):
         metrics["cos_similarities"] = cos_similarities  # List of K values
         metrics["avg_cos_similarity"] = np.mean(cos_similarities)
         metrics["min_cos_similarity"] = np.min(cos_similarities)
-        
+
         metrics["perp_errors"] = perp_errors  # List of K values
         metrics["avg_perp_error"] = np.mean(perp_errors)
         metrics["max_perp_error"] = np.max(perp_errors)
@@ -318,7 +320,7 @@ def evaluate(model, dataset, device, config):
         for k, cos_sim in enumerate(cos_similarities):
             alpha_k = dataset.alpha_velocities[k]
             logger.info(f"  Component {k} (alpha={alpha_k:.4f}): {cos_sim:.6f}")
-        
+
         # Log per-component perpendicular errors
         logger.info("Per-component perpendicular errors:")
         for k, perp_err in enumerate(perp_errors):
@@ -328,11 +330,11 @@ def evaluate(model, dataset, device, config):
     # Prepare data for plotting - include ALL components
     K = dataset.num_rotations
     rotation_dim = dataset.rotation_dim
-    
+
     # Reshape to [num_eval, K, rotation_dim] for easier access
     x_true_reshaped = x_true.reshape(-1, K, rotation_dim)
     x_pred_reshaped = x_pred.reshape(-1, K, rotation_dim)
-    
+
     plot_data = {
         "c_values": c_vals_np,
         "x_true_all": x_true_reshaped,  # [num_eval, K, rotation_dim]
@@ -401,7 +403,8 @@ def main(config_path: str, overrides: dict = None):
     )
 
     # Create model
-    # Note: condition_dim is 1 (just c, not [ÃƒÆ’Ã†â€™Ãƒâ€¦Ã‚Â½ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±, c])
+    # Note: condition_dim is 1 (just c, not [alpha, c])
+    # Output dim is K * rotation_dim (concatenated)
     # Output dim is K * rotation_dim (concatenated)
     output_dim = config.dataset.num_rotations * config.dataset.rotation_dim
 
@@ -492,7 +495,7 @@ def main(config_path: str, overrides: dict = None):
                         ),
                     }
                 )
-            
+
             if "avg_perp_error" in metrics:
                 eval_row.update(
                     {
@@ -502,7 +505,9 @@ def main(config_path: str, overrides: dict = None):
                 )
 
                 # Log per-component metrics
-                for k, (cos_sim, perp_err) in enumerate(zip(metrics["cos_similarities"], metrics["perp_errors"])):
+                for k, (cos_sim, perp_err) in enumerate(
+                    zip(metrics["cos_similarities"], metrics["perp_errors"])
+                ):
                     metrics_logger.log(
                         "components",
                         {
@@ -577,17 +582,17 @@ def main(config_path: str, overrides: dict = None):
     # Grid Visualizations - All Components
     # =========================================================================
     logger.info("Creating grid visualizations for all components...")
-    
+
     K = plot_data["num_components"]
     rotation_dim = plot_data["rotation_dim"]
     c_values = plot_data["c_values"]
     x_true_all = plot_data["x_true_all"]  # [num_eval, K, rotation_dim]
     x_pred_all = plot_data["x_pred_all"]  # [num_eval, K, rotation_dim]
-    
+
     if K <= 12:  # Only create grids if reasonable number of components
         n_cols = min(4, K)
         n_rows = (K + n_cols - 1) // n_cols
-        
+
         # 1. Predictions Grid
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
         if K == 1:
@@ -596,16 +601,16 @@ def main(config_path: str, overrides: dict = None):
             axes = axes.reshape(1, -1)
         elif n_cols == 1:
             axes = axes.reshape(-1, 1)
-        
+
         for k in range(K):
             row = k // n_cols
             col = k % n_cols
             ax = axes[row, col]
-            
+
             alpha_k = train_dataset.alpha_velocities[k]
             true_vals = x_true_all[:, k, 0]  # First element
             pred_vals = x_pred_all[:, k, 0]
-            
+
             ax.scatter(c_values, true_vals, alpha=0.6, s=10, label="True", color="blue")
             ax.scatter(c_values, pred_vals, alpha=0.6, s=10, label="Pred", color="red")
             ax.set_xlabel("c", fontsize=9)
@@ -613,19 +618,19 @@ def main(config_path: str, overrides: dict = None):
             ax.set_title(rf"Comp {k} ($\alpha$={alpha_k:.3f})", fontsize=10)
             ax.legend(fontsize=7)
             ax.grid(True, alpha=0.3)
-        
+
         # Hide unused subplots
         for k in range(K, n_rows * n_cols):
             row = k // n_cols
             col = k % n_cols
-            axes[row, col].axis('off')
-        
+            axes[row, col].axis("off")
+
         plt.tight_layout()
         save_path = plots_dir / "predictions_all_components_grid.png"
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
         logger.info(f"Saved predictions grid to {save_path}")
         plt.close(fig)
-        
+
         # 2. L1 Errors Grid
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
         if K == 1:
@@ -634,36 +639,39 @@ def main(config_path: str, overrides: dict = None):
             axes = axes.reshape(1, -1)
         elif n_cols == 1:
             axes = axes.reshape(-1, 1)
-        
+
         for k in range(K):
             row = k // n_cols
             col = k % n_cols
             ax = axes[row, col]
-            
+
             alpha_k = train_dataset.alpha_velocities[k]
             true_vals = x_true_all[:, k, 0]
             pred_vals = x_pred_all[:, k, 0]
             l1_errors = np.abs(pred_vals - true_vals)
-            
+
             ax.scatter(c_values, l1_errors, alpha=0.6, s=10, color="red")
             mean_error = np.mean(l1_errors)
             ax.axhline(y=mean_error, color="black", linestyle="--", linewidth=1)
             ax.set_xlabel("c", fontsize=9)
             ax.set_ylabel("L1 Error", fontsize=9)
-            ax.set_title(rf"Comp {k} ($\alpha$={alpha_k:.3f}), Mean={mean_error:.4f}", fontsize=10)
+            ax.set_title(
+                rf"Comp {k} ($\alpha$={alpha_k:.3f}), Mean={mean_error:.4f}",
+                fontsize=10,
+            )
             ax.grid(True, alpha=0.3)
-        
+
         for k in range(K, n_rows * n_cols):
             row = k // n_cols
             col = k % n_cols
-            axes[row, col].axis('off')
-        
+            axes[row, col].axis("off")
+
         plt.tight_layout()
         save_path = plots_dir / "l1_errors_all_components_grid.png"
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
         logger.info(f"Saved L1 errors grid to {save_path}")
         plt.close(fig)
-        
+
         # 3. L2 Errors Grid
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
         if K == 1:
@@ -672,43 +680,46 @@ def main(config_path: str, overrides: dict = None):
             axes = axes.reshape(1, -1)
         elif n_cols == 1:
             axes = axes.reshape(-1, 1)
-        
+
         for k in range(K):
             row = k // n_cols
             col = k % n_cols
             ax = axes[row, col]
-            
+
             alpha_k = train_dataset.alpha_velocities[k]
             true_vals = x_true_all[:, k, 0]
             pred_vals = x_pred_all[:, k, 0]
             l2_errors = (pred_vals - true_vals) ** 2
-            
+
             ax.scatter(c_values, l2_errors, alpha=0.6, s=10, color="orange")
             mean_error = np.mean(l2_errors)
             ax.axhline(y=mean_error, color="black", linestyle="--", linewidth=1)
             ax.set_xlabel("c", fontsize=9)
             ax.set_ylabel("L2 Error (squared)", fontsize=9)
-            ax.set_title(rf"Comp {k} ($\alpha$={alpha_k:.3f}), Mean={mean_error:.4f}", fontsize=10)
+            ax.set_title(
+                rf"Comp {k} ($\alpha$={alpha_k:.3f}), Mean={mean_error:.4f}",
+                fontsize=10,
+            )
             ax.grid(True, alpha=0.3)
-        
+
         for k in range(K, n_rows * n_cols):
             row = k // n_cols
             col = k % n_cols
-            axes[row, col].axis('off')
-        
+            axes[row, col].axis("off")
+
         plt.tight_layout()
         save_path = plots_dir / "l2_errors_all_components_grid.png"
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
         logger.info(f"Saved L2 errors grid to {save_path}")
         plt.close(fig)
-    
+
     # =========================================================================
     # Cosine Similarity Plots (if computed)
     # =========================================================================
     if plot_data["cos_similarities"] is not None:
         # Summary plot - cosine similarity vs component
         fig, ax = plt.subplots(figsize=(10, 6))
-        
+
         component_indices = list(range(len(plot_data["cos_similarities"])))
         ax.plot(
             component_indices,
@@ -717,7 +728,7 @@ def main(config_path: str, overrides: dict = None):
             linewidth=2,
             markersize=8,
         )
-        
+
         ax.set_xlabel("Component Index i", fontsize=12)
         ax.set_ylabel("Mean Cosine Similarity", fontsize=12)
         ax.set_title(
@@ -726,7 +737,7 @@ def main(config_path: str, overrides: dict = None):
             fontweight="bold",
         )
         ax.grid(True, alpha=0.3)
-        
+
         # Add alpha values as secondary x-axis labels
         ax2 = ax.twiny()
         ax2.set_xlim(ax.get_xlim())
@@ -734,13 +745,13 @@ def main(config_path: str, overrides: dict = None):
         alpha_labels = [f"{alpha:.2f}" for alpha in plot_data["alpha_velocities"]]
         ax2.set_xticklabels(alpha_labels, fontsize=9)
         ax2.set_xlabel(r"$\alpha$ velocity", fontsize=10)
-        
+
         plt.tight_layout()
         save_path = plots_dir / "cosine_similarity_vs_component.png"
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
         logger.info(f"Saved cosine similarity summary to {save_path}")
         plt.close(fig)
-        
+
         # Grid plot - cosine similarity per component
         if K <= 12:
             fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
@@ -750,54 +761,56 @@ def main(config_path: str, overrides: dict = None):
                 axes = axes.reshape(1, -1)
             elif n_cols == 1:
                 axes = axes.reshape(-1, 1)
-            
+
             # Get per-sample cosine similarities for each component
             c_vals_np = c_values
             manifold_vecs = train_dataset.get_manifold_vectors(c_vals_np)
             x_pred_reshaped = x_pred_all
-            
+
             for k in range(K):
                 row = k // n_cols
                 col = k % n_cols
                 ax = axes[row, col]
-                
+
                 alpha_k = train_dataset.alpha_velocities[k]
-                
+
                 # Compute cosine similarity for each sample
                 cos_sims = []
                 for i in range(len(c_vals_np)):
                     cos_sim = compute_cosine_similarity(
-                        x_pred_reshaped[i, k, :],
-                        manifold_vecs[i, k, :]
+                        x_pred_reshaped[i, k, :], manifold_vecs[i, k, :]
                     )
                     cos_sims.append(cos_sim)
-                
+
                 ax.scatter(c_vals_np, cos_sims, alpha=0.6, s=10, color="green")
                 mean_cos = np.mean(cos_sims)
                 ax.axhline(y=mean_cos, color="black", linestyle="--", linewidth=1)
                 ax.set_xlabel("c", fontsize=9)
                 ax.set_ylabel("Cosine Similarity", fontsize=9)
-                ax.set_title(rf"Comp {k} ($\alpha$={alpha_k:.3f}), Mean={mean_cos:.4f}", fontsize=10)
+                ax.set_title(
+                    rf"Comp {k} ($\alpha$={alpha_k:.3f}), Mean={mean_cos:.4f}",
+                    fontsize=10,
+                )
                 ax.grid(True, alpha=0.3)
-            
+
             for k in range(K, n_rows * n_cols):
                 row = k // n_cols
                 col = k % n_cols
-                axes[row, col].axis('off')
-            
+                axes[row, col].axis("off")
+
             plt.tight_layout()
             save_path = plots_dir / "cosine_similarity_all_components_grid.png"
             fig.savefig(save_path, dpi=150, bbox_inches="tight")
             logger.info(f"Saved cosine similarity grid to {save_path}")
             plt.close(fig)
-    
+
     # =========================================================================
     # Perpendicular Error Plots (if computed)
     # =========================================================================
     if "perp_errors" in metrics:
         # Summary plot - perpendicular error vs component
         fig, ax = plt.subplots(figsize=(10, 6))
-        
+
         component_indices = list(range(len(metrics["perp_errors"])))
         ax.plot(
             component_indices,
@@ -807,7 +820,7 @@ def main(config_path: str, overrides: dict = None):
             markersize=8,
             color="purple",
         )
-        
+
         ax.set_xlabel("Component Index i", fontsize=12)
         ax.set_ylabel("Mean Perpendicular Error", fontsize=12)
         ax.set_title(
@@ -816,7 +829,7 @@ def main(config_path: str, overrides: dict = None):
             fontweight="bold",
         )
         ax.grid(True, alpha=0.3)
-        
+
         # Add alpha values as secondary x-axis labels
         ax2 = ax.twiny()
         ax2.set_xlim(ax.get_xlim())
@@ -824,13 +837,13 @@ def main(config_path: str, overrides: dict = None):
         alpha_labels = [f"{alpha:.2f}" for alpha in plot_data["alpha_velocities"]]
         ax2.set_xticklabels(alpha_labels, fontsize=9)
         ax2.set_xlabel(r"$\alpha$ velocity", fontsize=10)
-        
+
         plt.tight_layout()
         save_path = plots_dir / "perpendicular_error_vs_component.png"
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
         logger.info(f"Saved perpendicular error summary to {save_path}")
         plt.close(fig)
-        
+
         # Grid plot - perpendicular error per component
         if K <= 12:
             fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
@@ -840,41 +853,43 @@ def main(config_path: str, overrides: dict = None):
                 axes = axes.reshape(1, -1)
             elif n_cols == 1:
                 axes = axes.reshape(-1, 1)
-            
+
             # Get per-sample perpendicular errors for each component
             c_vals_np = c_values
             manifold_vecs = train_dataset.get_manifold_vectors(c_vals_np)
             x_pred_reshaped = x_pred_all
-            
+
             for k in range(K):
                 row = k // n_cols
                 col = k % n_cols
                 ax = axes[row, col]
-                
+
                 alpha_k = train_dataset.alpha_velocities[k]
-                
+
                 # Compute perpendicular error for each sample
                 perp_errs = []
                 for i in range(len(c_vals_np)):
                     perp_err = compute_perpendicular_projection_error(
-                        x_pred_reshaped[i, k, :],
-                        manifold_vecs[i, k, :]
+                        x_pred_reshaped[i, k, :], manifold_vecs[i, k, :]
                     )
                     perp_errs.append(perp_err)
-                
+
                 ax.scatter(c_vals_np, perp_errs, alpha=0.6, s=10, color="purple")
                 mean_perp = np.mean(perp_errs)
                 ax.axhline(y=mean_perp, color="black", linestyle="--", linewidth=1)
                 ax.set_xlabel("c", fontsize=9)
                 ax.set_ylabel("Perpendicular Error", fontsize=9)
-                ax.set_title(rf"Comp {k} ($\alpha$={alpha_k:.3f}), Mean={mean_perp:.4f}", fontsize=10)
+                ax.set_title(
+                    rf"Comp {k} ($\alpha$={alpha_k:.3f}), Mean={mean_perp:.4f}",
+                    fontsize=10,
+                )
                 ax.grid(True, alpha=0.3)
-            
+
             for k in range(K, n_rows * n_cols):
                 row = k // n_cols
                 col = k % n_cols
-                axes[row, col].axis('off')
-            
+                axes[row, col].axis("off")
+
             plt.tight_layout()
             save_path = plots_dir / "perpendicular_error_all_components_grid.png"
             fig.savefig(save_path, dpi=150, bbox_inches="tight")

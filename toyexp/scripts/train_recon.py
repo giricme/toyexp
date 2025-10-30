@@ -41,7 +41,7 @@ from toyexp.common.utils import (
     set_seed,
 )
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def create_datasets(config):
@@ -183,7 +183,7 @@ def main(config_path: str, overrides: dict = None):
 
     # Setup logging
     setup_logging(
-        name="train_recon",
+        name="",
         level=logging.INFO,
         log_file=output_dir / "train.log",
     )

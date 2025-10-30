@@ -35,7 +35,7 @@ def get_primes(n: int) -> list[int]:
 
 class TargetFunctionDataset(Dataset):
     """
-    Dataset for target function f(c) = ÃŽÂ£ wÃ¡ÂµÂ¢ * trig_i(freq_i * c + phase_i)
+    Dataset for target function f(c) = ÃƒÅ½Ã‚Â£ wÃƒÂ¡Ã‚ÂµÃ‚Â¢ * trig_i(freq_i * c + phase_i)
 
     Supports both scalar and vector-valued functions with configurable:
     - Number of sine/cosine components
@@ -50,7 +50,7 @@ class TargetFunctionDataset(Dataset):
         num_components: Number of sine/cosine terms per output dimension
         c_min: Minimum value of conditioning variable
         c_max: Maximum value of conditioning variable
-        weight_strategy: 'uniform' (all weights=1) or 'inverse_freq' (weight Ã¢Ë†Â 1/freq)
+        weight_strategy: 'uniform' (all weights=1) or 'inverse_freq' (weight ÃƒÂ¢Ã‹â€ Ã‚Â 1/freq)
         sampling_strategy: 'grid' (uniform spacing) or 'random' (uniform random)
         freq_seed: Random seed for frequency generation
         phase_seed: Random seed for phase generation
@@ -247,8 +247,12 @@ class TargetFunctionDataset(Dataset):
 
     def get_function_description(self) -> str:
         """Get human-readable description of the target function."""
-        desc_lines = [f"Target function f: Ã¢â€žÂ Ã¢â€ â€™ Ã¢â€žÂ^{self.target_dim}"]
-        desc_lines.append(f"Domain: c Ã¢Ë†Ë† [{self.c_min:.2f}, {self.c_max:.2f}]")
+        desc_lines = [
+            f"Target function f: ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â^{self.target_dim}"
+        ]
+        desc_lines.append(
+            f"Domain: c ÃƒÂ¢Ã‹â€ Ã‹â€  [{self.c_min:.2f}, {self.c_max:.2f}]"
+        )
         desc_lines.append(f"Weighting: {self.weight_strategy}")
         desc_lines.append(f"Components per dimension: {self.num_components}")
         desc_lines.append("")
@@ -260,7 +264,7 @@ class TargetFunctionDataset(Dataset):
                 phase = self.phases[dim][comp]
                 weight = self.weights[dim][comp]
                 trig = "cos" if self.use_cosines and comp % 2 == 1 else "sin"
-                terms.append(f"{weight:.3f}Ã‚Â·{trig}({freq:.1f}c + {phase:.2f})")
+                terms.append(f"{weight:.3f}Ãƒâ€šÃ‚Â·{trig}({freq:.1f}c + {phase:.2f})")
 
             desc_lines.append(f"f_{dim}(c) = {' + '.join(terms)}")
 
@@ -276,10 +280,10 @@ class ProjectedTargetFunctionDataset(Dataset):
 
     Creates a high-dimensional target function and projects it onto interval-specific
     lower-dimensional subspaces using rank-deficient projection matrices.
-    
+
     The domain [c_min, c_max] is divided into num_intervals uniform intervals.
-    Each interval i has its own projection matrix P_i in R^(target_dim x target_dim) 
-    with rank = low_dim, constructed as P_i = A_i(A_i^T A_i)^(-1) A_i^T where 
+    Each interval i has its own projection matrix P_i in R^(target_dim x target_dim)
+    with rank = low_dim, constructed as P_i = A_i(A_i^T A_i)^(-1) A_i^T where
     A_i in R^(target_dim x low_dim).
 
     This setup allows studying:
@@ -354,14 +358,14 @@ class ProjectedTargetFunctionDataset(Dataset):
             use_cosines=True,
         )
 
-        # Generate projection matrix (target_dim Ãƒâ€” target_dim, rank = low_dim)
+        # Generate projection matrix (target_dim ÃƒÆ’Ã¢â‚¬â€ target_dim, rank = low_dim)
         self.projection_matrices = self._generate_projection_matrices()
 
         # Compute projected values
         self.c_values = self.base_dataset.c_values
         self.x_high = self.base_dataset.x_values
         self.x_projected = self._project(self.x_high, self.c_values)
-        
+
         logger.info(
             f"Created ProjectedTargetFunctionDataset with {self.num_intervals} intervals, "
             f"each with rank-{self.low_dim} projection in {self.target_dim}D space"
@@ -370,57 +374,58 @@ class ProjectedTargetFunctionDataset(Dataset):
     def _get_interval_id(self, c: float) -> int:
         """
         Determine which interval a c value belongs to.
-        
+
         Args:
             c: Conditioning value in [c_min, c_max]
-            
+
         Returns:
             interval_id: Integer in [0, num_intervals-1]
         """
         # Normalize c to [0, 1]
         c_normalized = (c - self.c_min) / (self.c_max - self.c_min)
-        
+
         # Compute interval ID
         interval_id = int(c_normalized * self.num_intervals)
-        
+
         # Clamp to valid range [0, num_intervals-1]
         interval_id = max(0, min(interval_id, self.num_intervals - 1))
-        
+
         return interval_id
 
     def _generate_projection_matrices(self) -> Dict[int, torch.Tensor]:
         """
         Generate multiple projection matrices, one for each interval.
-        
+
         Each matrix P_i is in R^(target_dim x target_dim) with rank = low_dim.
         Different intervals have different random subspaces.
-        
+
         Returns:
             Dict mapping interval_id -> projection matrix
         """
         projection_matrices = {}
-        
+
         for i in range(self.num_intervals):
             # Use different seed for each interval
             seed = self.proj_seed + i
             np.random.seed(seed)
-            
+
             # Generate random target_dim x low_dim matrix
             A = np.random.randn(self.target_dim, self.low_dim)
-            
+
             # Compute A^T A
             ATA = A.T @ A
-            
+
             # Add small regularization for numerical stability
             ATA_inv = np.linalg.inv(ATA + 1e-10 * np.eye(self.low_dim))
-            
+
             # Compute projection matrix P = A(A^T A)^(-1) A^T
             # This projects onto the column space of A (rank = low_dim)
             P = A @ ATA_inv @ A.T
-            
+
             projection_matrices[i] = torch.tensor(P, dtype=torch.float32)
-        
+
         return projection_matrices
+
     def _project(self, x_high: torch.Tensor, c_values: torch.Tensor) -> torch.Tensor:
         """
         Project high-dimensional values to interval-specific low-dimensional subspaces.
@@ -434,17 +439,17 @@ class ProjectedTargetFunctionDataset(Dataset):
         """
         n_samples = x_high.shape[0]
         x_projected = torch.zeros_like(x_high)
-        
+
         # Get c values as numpy array for interval computation
         c_np = c_values.cpu().numpy().flatten()
-        
+
         # Project each sample with its corresponding interval's projection matrix
         for i in range(n_samples):
             interval_id = self._get_interval_id(c_np[i])
             P_i = self.projection_matrices[interval_id]
             # Project: x_projected = P @ x
             x_projected[i] = x_high[i] @ P_i.T
-        
+
         return x_projected
 
     def generate_eval_data(
@@ -517,9 +522,9 @@ class ProjectedTargetFunctionDataset(Dataset):
         """Get human-readable description."""
         desc_lines = [
             "Projected target function g(c) = P @ f(c)",
-            f"f: Ã¢â€žÂ Ã¢â€ â€™ Ã¢â€žÂ^{self.target_dim}",
-            f"P: Ã¢â€žÂ^{self.target_dim}Ãƒâ€”{self.target_dim} projection matrix (rank {self.low_dim})",
-            f"g: Ã¢â€žÂ Ã¢â€ â€™ Ã¢â€žÂ^{self.target_dim} (living in {self.low_dim}-dim subspace)",
+            f"f: ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â^{self.target_dim}",
+            f"P: ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â^{self.target_dim}ÃƒÆ’Ã¢â‚¬â€{self.target_dim} projection matrix (rank {self.low_dim})",
+            f"g: ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â^{self.target_dim} (living in {self.low_dim}-dim subspace)",
             "",
             "Base function f(c):",
         ]
@@ -533,8 +538,8 @@ class ProjectedTargetFunctionDataset(Dataset):
 """
 New LieAlgebraRotationDataset implementation for redesigned target function.
 
-Target function: fáµ¢(Î±, c) = wáµ¢(c) Â· exp(Î±áµ¢Â·c Â· A) Â· eâ‚
-Output: concat(fâ‚, fâ‚‚, ..., fâ‚–) âˆˆ â„^(KÂ·rotation_dim)
+Target function: fÃ¡ÂµÂ¢(ÃŽÂ±, c) = wÃ¡ÂµÂ¢(c) Ã‚Â· exp(ÃŽÂ±Ã¡ÂµÂ¢Ã‚Â·c Ã‚Â· A) Ã‚Â· eÃ¢â€šÂ
+Output: concat(fÃ¢â€šÂ, fÃ¢â€šâ€š, ..., fÃ¢â€šâ€“) Ã¢Ë†Ë† Ã¢â€žÂ^(KÃ‚Â·rotation_dim)
 """
 
 
@@ -542,41 +547,41 @@ class LieAlgebraRotationDataset(Dataset):
     """
     Dataset for Lie algebra rotation functions (REDESIGNED).
 
-    Target function: fáµ¢(Î±, c) = wáµ¢(c) Â· exp(Î±áµ¢Â·c Â· A) Â· eâ‚
-    Output: concat(fâ‚, fâ‚‚, ..., fâ‚–) âˆˆ â„^(KÂ·rotation_dim)
+    Target function: fÃ¡ÂµÂ¢(ÃŽÂ±, c) = wÃ¡ÂµÂ¢(c) Ã‚Â· exp(ÃŽÂ±Ã¡ÂµÂ¢Ã‚Â·c Ã‚Â· A) Ã‚Â· eÃ¢â€šÂ
+    Output: concat(fÃ¢â€šÂ, fÃ¢â€šâ€š, ..., fÃ¢â€šâ€“) Ã¢Ë†Ë† Ã¢â€žÂ^(KÃ‚Â·rotation_dim)
 
     Key differences from old design:
     - Single rotation matrix A (same for all components)
-    - Single initial vector eâ‚ (same for all components)
-    - Each component i has velocity Î±áµ¢
-    - Rotation angle is Î±áµ¢Â·c (product of velocity and conditioning)
+    - Single initial vector eÃ¢â€šÂ (same for all components)
+    - Each component i has velocity ÃŽÂ±Ã¡ÂµÂ¢
+    - Rotation angle is ÃŽÂ±Ã¡ÂµÂ¢Ã‚Â·c (product of velocity and conditioning)
     - Output is concatenation of all K rotated vectors
 
     Where:
     - K: number of rotation components (num_rotations)
-    - A âˆˆ so(n): single skew-symmetric matrix (rotation generator)
-    - eâ‚ âˆˆ â„â¿: single initial unit vector
-    - wáµ¢(c) âˆˆ â„: weight functions (constant or high-frequency)
-    - Î±áµ¢: rotation velocities (one per component)
-    - c âˆˆ [c_min, c_max]: conditioning variable
+    - A Ã¢Ë†Ë† so(n): single skew-symmetric matrix (rotation generator)
+    - eÃ¢â€šÂ Ã¢Ë†Ë† Ã¢â€žÂÃ¢ÂÂ¿: single initial unit vector
+    - wÃ¡ÂµÂ¢(c) Ã¢Ë†Ë† Ã¢â€žÂ: weight functions (constant or high-frequency)
+    - ÃŽÂ±Ã¡ÂµÂ¢: rotation velocities (one per component)
+    - c Ã¢Ë†Ë† [c_min, c_max]: conditioning variable
 
     For SO(2): A = [[0, -1], [1, 0]] (standard 2D rotation)
 
     Args:
-        num_c_samples: Number of c samples (Î± is implicit via Î±áµ¢Â·c)
+        num_c_samples: Number of c samples (ÃŽÂ± is implicit via ÃŽÂ±Ã¡ÂµÂ¢Ã‚Â·c)
         rotation_dim: Dimension of rotation (2 for SO(2), 3 for SO(3))
         num_rotations: Number of rotation components K
         c_min: Minimum c value
         c_max: Maximum c value
-        alpha_values: List of K velocity values [Î±â‚, Î±â‚‚, ..., Î±â‚–]
+        alpha_values: List of K velocity values [ÃŽÂ±Ã¢â€šÂ, ÃŽÂ±Ã¢â€šâ€š, ..., ÃŽÂ±Ã¢â€šâ€“]
                      If None, generates linearly spaced in [alpha_min, alpha_max]
-        alpha_min: Minimum Î± value (if alpha_values not provided)
-        alpha_max: Maximum Î± value (if alpha_values not provided)
+        alpha_min: Minimum ÃŽÂ± value (if alpha_values not provided)
+        alpha_max: Maximum ÃŽÂ± value (if alpha_values not provided)
         weight_mode: 'constant' or 'high_frequency'
         num_weight_components: Number of sine/cosine terms per weight (if high_frequency)
         weight_strategy: 'uniform' or 'inverse_freq' (if high_frequency)
         sampling_strategy: 'grid' or 'random'
-        rotation_seed: Random seed for A matrix and eâ‚ vector
+        rotation_seed: Random seed for A matrix and eÃ¢â€šÂ vector
         weight_seed: Random seed for weight functions
         sample_seed: Random seed for sampling c values
     """
@@ -629,7 +634,7 @@ class LieAlgebraRotationDataset(Dataset):
             # Linearly spaced velocities
             self.alpha_velocities = np.linspace(alpha_min, alpha_max, num_rotations)
 
-        # Generate single rotation matrix A and initial vector eâ‚
+        # Generate single rotation matrix A and initial vector eÃ¢â€šÂ
         self._generate_rotation_params()
 
         # Generate weight functions
@@ -648,7 +653,7 @@ class LieAlgebraRotationDataset(Dataset):
         self.targets = self._compute_all_targets()
 
     def _generate_rotation_params(self):
-        """Generate single rotation matrix A and initial vector eâ‚."""
+        """Generate single rotation matrix A and initial vector eÃ¢â€šÂ."""
         np.random.seed(self.rotation_seed)
 
         if self.rotation_dim == 2:
@@ -662,12 +667,12 @@ class LieAlgebraRotationDataset(Dataset):
             self.A = (rand_mat - rand_mat.T) / 2
             self.A = self.A.astype(np.float32)
 
-        # Single initial vector eâ‚ (random unit vector)
+        # Single initial vector eÃ¢â€šÂ (random unit vector)
         self.initial_vector = np.random.randn(self.rotation_dim).astype(np.float32)
         self.initial_vector = self.initial_vector / np.linalg.norm(self.initial_vector)
 
     def _generate_weight_functions(self):
-        """Generate high-frequency weight functions wáµ¢(c)."""
+        """Generate high-frequency weight functions wÃ¡ÂµÂ¢(c)."""
         np.random.seed(self.weight_seed)
 
         # Get primes for frequencies and phases
@@ -707,7 +712,7 @@ class LieAlgebraRotationDataset(Dataset):
             self.weight_coefficients.append(rot_weights)
 
     def _compute_weight(self, c: float, rotation_idx: int) -> float:
-        """Compute weight wáµ¢(c) for rotation i."""
+        """Compute weight wÃ¡ÂµÂ¢(c) for rotation i."""
         if self.weight_mode == "constant":
             return self.constant_weights[rotation_idx]
         else:  # high_frequency
@@ -727,17 +732,17 @@ class LieAlgebraRotationDataset(Dataset):
 
     def _rotation_matrix(self, angle: float) -> np.ndarray:
         """
-        Compute rotation matrix exp(angleÂ·A).
+        Compute rotation matrix exp(angleÃ‚Â·A).
 
         Args:
-            angle: Rotation angle (Î±áµ¢Â·c)
+            angle: Rotation angle (ÃŽÂ±Ã¡ÂµÂ¢Ã‚Â·c)
 
         Returns:
-            Rotation matrix R = exp(angleÂ·A)
+            Rotation matrix R = exp(angleÃ‚Â·A)
         """
         if self.rotation_dim == 2:
             # For 2D rotation with A = [[0, -1], [1, 0]]:
-            # exp(Î¸Â·A) = [[cos(Î¸), -sin(Î¸)], [sin(Î¸), cos(Î¸)]]
+            # exp(ÃŽÂ¸Ã‚Â·A) = [[cos(ÃŽÂ¸), -sin(ÃŽÂ¸)], [sin(ÃŽÂ¸), cos(ÃŽÂ¸)]]
             cos_angle = np.cos(angle)
             sin_angle = np.sin(angle)
             return np.array(
@@ -751,7 +756,7 @@ class LieAlgebraRotationDataset(Dataset):
 
     def _compute_component(self, c: float, component_idx: int) -> np.ndarray:
         """
-        Compute single component fáµ¢(Î±, c) = wáµ¢(c) Â· exp(Î±áµ¢Â·c Â· A) Â· eâ‚
+        Compute single component fÃ¡ÂµÂ¢(ÃŽÂ±, c) = wÃ¡ÂµÂ¢(c) Ã‚Â· exp(ÃŽÂ±Ã¡ÂµÂ¢Ã‚Â·c Ã‚Â· A) Ã‚Â· eÃ¢â€šÂ
 
         Args:
             c: Conditioning value
@@ -778,7 +783,7 @@ class LieAlgebraRotationDataset(Dataset):
 
     def _compute_target(self, c: float) -> np.ndarray:
         """
-        Compute full target: concat(fâ‚, fâ‚‚, ..., fâ‚–)
+        Compute full target: concat(fÃ¢â€šÂ, fÃ¢â€šâ€š, ..., fÃ¢â€šâ€“)
 
         Args:
             c: Conditioning value
@@ -854,7 +859,7 @@ class LieAlgebraRotationDataset(Dataset):
 
     def get_manifold_vectors(self, c_values: np.ndarray) -> np.ndarray:
         """
-        Get the manifold vectors exp(Î±áµ¢Â·c Â· A) Â· eâ‚ for each component.
+        Get the manifold vectors exp(ÃŽÂ±Ã¡ÂµÂ¢Ã‚Â·c Ã‚Â· A) Ã‚Â· eÃ¢â€šÂ for each component.
 
         This is used for computing cosine similarity metrics.
 
@@ -910,18 +915,18 @@ class LieAlgebraRotationDataset(Dataset):
     def get_function_description(self) -> str:
         """Get human-readable description of the target function."""
         desc_lines = [
-            f"Lie Algebra Rotation Function (REDESIGNED): fáµ¢(Î±, c) = wáµ¢(c) Â· exp(Î±áµ¢Â·c Â· A) Â· eâ‚",
-            f"Output: concat(fâ‚, ..., fâ‚{self.num_rotations}â‚Ž) âˆˆ â„^{self.num_rotations * self.rotation_dim}",
+            f"Lie Algebra Rotation Function (REDESIGNED): f_i(alpha, c) = w_i(c) * exp(alpha_i*c * A) * e_1",
+            f"Output: concat(f_1, ..., f_{self.num_rotations}) in R^{self.num_rotations * self.rotation_dim}",
             f"Rotation dimension: SO({self.rotation_dim})",
             f"Number of components K: {self.num_rotations}",
-            f"c âˆˆ [{self.c_min:.2f}, {self.c_max:.2f}]",
+            f"c in [{self.c_min:.2f}, {self.c_max:.2f}]",
             f"Weight mode: {self.weight_mode}",
             "",
-            "Rotation velocities Î±:",
+            "Rotation velocities alpha:",
         ]
 
         for i in range(min(self.num_rotations, 10)):
-            desc_lines.append(f"  Î±_{i} = {self.alpha_velocities[i]:.4f}")
+            desc_lines.append(f"  alpha_{i} = {self.alpha_velocities[i]:.4f}")
 
         if self.num_rotations > 10:
             desc_lines.append(f"  ... ({self.num_rotations - 10} more velocities)")
@@ -938,39 +943,3 @@ class LieAlgebraRotationDataset(Dataset):
             )
 
         return "\n".join(desc_lines)
-
-
-if __name__ == "__main__":
-    # Test code
-    logging.basicConfig(level=logging.INFO)
-    logger.info("Testing datasets...")
-
-    # Test TargetFunctionDataset
-    ds1 = TargetFunctionDataset(num_samples=10, target_dim=1)
-    logger.info(f"TargetFunctionDataset: {len(ds1)} samples")
-    sample = ds1[0]
-    logger.info(f"Sample keys: {sample.keys()}")
-    logger.info(f"c shape: {sample['c'].shape}, x shape: {sample['x'].shape}")
-
-    # Test generate_eval_data
-    eval_data = ds1.generate_eval_data(num_samples=20, eval_seed=999)
-    logger.info(f"Eval data keys: {eval_data.keys()}")
-    logger.info(
-        f"Eval c shape: {eval_data['c'].shape}, x shape: {eval_data['x'].shape}"
-    )
-
-    # Test ProjectedTargetFunctionDataset
-    ds2 = ProjectedTargetFunctionDataset(num_samples=10, target_dim=8, low_dim=3)
-    logger.info(f"\nProjectedTargetFunctionDataset: {len(ds2)} samples")
-    sample = ds2[0]
-    logger.info(f"Sample keys: {sample.keys()}")
-    logger.info(f"c shape: {sample['c'].shape}, x shape: {sample['x'].shape}")
-
-    # Test generate_eval_data
-    eval_data = ds2.generate_eval_data(num_samples=20, eval_seed=999)
-    logger.info(f"Eval data keys: {eval_data.keys()}")
-    logger.info(
-        f"Eval c shape: {eval_data['c'].shape}, x shape: {eval_data['x'].shape}"
-    )
-
-    logger.info("\nÃ¢Å“â€œ All dataset tests passed!")
