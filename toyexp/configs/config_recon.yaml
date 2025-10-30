@@ -4,7 +4,7 @@
 # Experiment settings
 experiment:
   name: "recon_experiment"
-  mode: "regression"  # or "flow"
+  mode: "mip"  # 'regression' or 'flow' or 'mip'
   seed: 42
   device: "cuda"  # or "cpu"
   output_dir: "./outputs/recon"
@@ -12,8 +12,8 @@ experiment:
 # Dataset configuration
 dataset:
   type: "TargetFunctionDataset"
-  num_train: 50
-  num_eval: 1000
+  num_train: 50  # Number of c samples for training
+  num_eval: 100000  # Number of c samples for evaluation
   target_dim: 1
   condition_dim: 1
   c_min: 0.0
@@ -41,16 +41,16 @@ network:
 training:
   loss_type: "l2"
   batch_size: 32
-  num_epochs: 5000
+  num_epochs: 50000
   learning_rate: 0.001
   
   # Logging intervals
-  log_interval: 100
-  eval_interval: 500
-  save_interval: 1000
+  log_interval: 1000
+  eval_interval: 50000
+  save_interval: 50000
   
-  # Initial distribution (for flow models)
-  initial_dist: "zeros"  # or "gaussian"
+  # Initial distribution for flow
+  initial_dist: "gaussian"  # 'zeros' or 'gaussian'
   
   # MIP parameters (only used if mode='mip')
   mip_t_star: 0.9  # Fixed time point for denoising term

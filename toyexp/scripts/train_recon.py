@@ -34,7 +34,6 @@ from toyexp.common.logging_utils import (
 from toyexp.common.losses import LossManager
 from toyexp.common.networks import create_model
 from toyexp.common.utils import (
-    build_experiment_name,
     plot_errors,
     plot_predictions,
     plot_training_curves,

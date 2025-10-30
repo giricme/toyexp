@@ -8,6 +8,7 @@ import argparse
 import logging
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.optim as optim
@@ -34,7 +35,6 @@ from toyexp.common.logging_utils import (
 from toyexp.common.losses import LossManager
 from toyexp.common.networks import create_model
 from toyexp.common.utils import (
-    build_experiment_name,
     plot_errors,
     plot_predictions,
     plot_training_curves,
@@ -69,7 +69,7 @@ def create_datasets(config):
 
     logger.info(f"Training dataset: {len(train_dataset)} samples")
     logger.info(
-        f"Projection: {config.dataset.target_dim}D ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ {config.dataset.low_dim}D subspace"
+        f"Projection: {config.dataset.target_dim}D ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ {config.dataset.low_dim}D subspace"
     )
 
     return train_dataset
@@ -259,11 +259,13 @@ def evaluate(model, dataset, device, config):
     subspace_metrics = analyze_subspace(model, dataset, device, config)
     metrics.update(subspace_metrics)
 
-    # Prepare data for plotting (use first dimension)
+    # Prepare data for plotting (all dimensions)
     plot_data = {
         "c_values": c_eval.cpu().numpy().flatten(),
-        "true_values": x_true[:, 0],  # First dimension
-        "pred_values": x_pred[:, 0],  # First dimension
+        "true_values": x_true,  # All dimensions [num_samples, target_dim]
+        "pred_values": x_pred,  # All dimensions [num_samples, target_dim]
+        "l1_per_dim": l1_per_dim,  # Per-dimension L1 errors
+        "l2_per_dim": l2_per_dim,  # Per-dimension L2 errors
     }
 
     return metrics, plot_data
@@ -430,23 +432,110 @@ def main(config_path: str, overrides: dict = None):
         title=f"{config.experiment.name} - Training Curves",
     )
 
-    # Predictions (first dimension only)
-    plot_predictions(
-        plot_data["c_values"],
-        plot_data["true_values"],
-        plot_data["pred_values"],
-        save_path=plots_dir / "predictions_dim0.png",
-        title=f"{config.experiment.name} - Predictions (Dim 0)",
-    )
+    # Grid visualization for all dimensions
+    target_dim = config.dataset.target_dim
+    c_values = plot_data["c_values"]
+    true_values = plot_data["true_values"]
+    pred_values = plot_data["pred_values"]
+    l1_per_dim = plot_data["l1_per_dim"]
+    l2_per_dim = plot_data["l2_per_dim"]
 
-    # Errors
-    errors = np.abs(plot_data["pred_values"] - plot_data["true_values"])
-    plot_errors(
-        plot_data["c_values"],
-        errors,
-        save_path=plots_dir / "errors_dim0.png",
-        title=f"{config.experiment.name} - Prediction Errors (Dim 0)",
-    )
+    # Determine grid layout
+    n_cols = min(4, target_dim)
+    n_rows = (target_dim + n_cols - 1) // n_cols
+
+    # 1. Predictions grid
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+    if target_dim == 1:
+        axes = np.array([axes])
+    axes = axes.flatten()
+
+    for dim in range(target_dim):
+        ax = axes[dim]
+        ax.scatter(c_values, true_values[:, dim], alpha=0.5, s=20, label="True")
+        ax.scatter(c_values, pred_values[:, dim], alpha=0.5, s=20, label="Predicted")
+        ax.set_xlabel("c")
+        ax.set_ylabel(f"x[{dim}]")
+        ax.set_title(f"Dimension {dim}")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    # Hide unused subplots
+    for dim in range(target_dim, len(axes)):
+        axes[dim].axis("off")
+
+    plt.tight_layout()
+    plt.savefig(plots_dir / "predictions_all_dims_grid.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    # 2. L1 Errors grid
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+    if target_dim == 1:
+        axes = np.array([axes])
+    axes = axes.flatten()
+
+    for dim in range(target_dim):
+        ax = axes[dim]
+        l1_errors = np.abs(pred_values[:, dim] - true_values[:, dim])
+        ax.scatter(c_values, l1_errors, alpha=0.5, s=20, c="red")
+        ax.set_xlabel("c")
+        ax.set_ylabel("L1 Error")
+        ax.set_title(f"Dimension {dim} (mean: {l1_per_dim[dim]:.4f})")
+        ax.grid(True, alpha=0.3)
+
+    # Hide unused subplots
+    for dim in range(target_dim, len(axes)):
+        axes[dim].axis("off")
+
+    plt.tight_layout()
+    plt.savefig(plots_dir / "l1_errors_all_dims_grid.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    # 3. L2 Errors grid
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+    if target_dim == 1:
+        axes = np.array([axes])
+    axes = axes.flatten()
+
+    for dim in range(target_dim):
+        ax = axes[dim]
+        l2_errors = (pred_values[:, dim] - true_values[:, dim]) ** 2
+        ax.scatter(c_values, l2_errors, alpha=0.5, s=20, c="orange")
+        ax.set_xlabel("c")
+        ax.set_ylabel("L2 Error (squared)")
+        ax.set_title(f"Dimension {dim} (RMSE: {l2_per_dim[dim]:.4f})")
+        ax.grid(True, alpha=0.3)
+
+    # Hide unused subplots
+    for dim in range(target_dim, len(axes)):
+        axes[dim].axis("off")
+
+    plt.tight_layout()
+    plt.savefig(plots_dir / "l2_errors_all_dims_grid.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    # 4. Summary plots: Error vs Dimension
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+    # L1 error vs dimension
+    axes[0].bar(range(target_dim), l1_per_dim, color="red", alpha=0.6)
+    axes[0].set_xlabel("Dimension")
+    axes[0].set_ylabel("Mean L1 Error")
+    axes[0].set_title("L1 Error vs Dimension")
+    axes[0].grid(True, alpha=0.3, axis="y")
+    axes[0].set_xticks(range(target_dim))
+
+    # L2 error vs dimension
+    axes[1].bar(range(target_dim), l2_per_dim, color="orange", alpha=0.6)
+    axes[1].set_xlabel("Dimension")
+    axes[1].set_ylabel("RMSE")
+    axes[1].set_title("L2 Error (RMSE) vs Dimension")
+    axes[1].grid(True, alpha=0.3, axis="y")
+    axes[1].set_xticks(range(target_dim))
+
+    plt.tight_layout()
+    plt.savefig(plots_dir / "error_vs_dimension.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
 
     # Save final checkpoint
     save_checkpoint(
