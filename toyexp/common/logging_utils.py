@@ -213,6 +213,8 @@ def log_evaluation(
 ):
     """
     Log evaluation metrics with consistent formatting.
+    
+    Filters out numpy arrays and other complex types to avoid cluttering logs.
 
     Args:
         metrics: Dict of metric name -> value
@@ -224,12 +226,15 @@ def log_evaluation(
 
     logger.info(f"{prefix} Results:")
     for key, value in metrics.items():
-        # Skip per-component lists (logged separately in train_lie.py)
-        if key in ["cos_similarities", "perp_errors"]:
+        # Skip numpy arrays, lists, dicts, and other complex types
+        if hasattr(value, '__len__') and not isinstance(value, str):
+            continue  # Skip arrays, lists, dicts
+        if key.startswith('_'):  # Skip private/internal metrics
             continue
+        
         if isinstance(value, float):
             logger.info(f"  {key}: {value:.6f}")
-        else:
+        elif isinstance(value, (int, str, bool)):
             logger.info(f"  {key}: {value}")
 
 
@@ -344,7 +349,6 @@ def create_metrics_logger(
                 "avg_abs_cos_similarity",
                 "min_abs_cos_similarity",
                 "avg_perp_error",
-                "max_perp_error",
             ],
         )
         ml.add_logger(
@@ -355,7 +359,8 @@ def create_metrics_logger(
                 "alpha",
                 "cos_similarity",
                 "abs_cos_similarity",
-                "perp_error",
+                "perp_error_mean",
+                "perp_error_std",
             ],
         )
     else:  # recon, proj

@@ -69,7 +69,7 @@ def create_datasets(config):
 
     logger.info(f"Training dataset: {len(train_dataset)} samples")
     logger.info(
-        f"Projection: {config.dataset.target_dim}D ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ {config.dataset.low_dim}D subspace"
+        f"Projection: {config.dataset.target_dim}D -> {config.dataset.low_dim}D subspace"
     )
 
     return train_dataset
@@ -124,86 +124,564 @@ def train_epoch(model, dataloader, loss_manager, optimizer, device, config):
 def analyze_subspace(model, dataset, device, config):
     """
     Analyze learned vs true subspace structure.
+    
+    NOTE: This function is deprecated for interval-based projections.
+    It will be replaced with evaluate_subspace_metric() in Phase 2.
 
     Returns dictionary with subspace analysis metrics.
     """
-    if not config.evaluation.analyze_subspace:
-        return {}
+    # Skip analysis for now - will be replaced with interval-aware metrics
+    logger.info("Subspace analysis: Skipping (deprecated for interval-based projections)")
+    return {}
 
+
+def evaluate_subspace_metric(
+    model,
+    dataset,
+    device,
+    config,
+    n_test_per_interval: int = 20,
+):
+    """
+    Evaluate subspace complement metric using interval regions.
+    
+    For each (i,j) pair in 10x10 matrix:
+    - i = test interval (where we sample points)
+    - j = projection matrix to test against
+    
+    Computes 4 metrics measuring how much predictions "leak" outside the correct subspace:
+    1. ||(I - P_j) f_hat||
+    2. ||(I - P_j) f_hat|| / ||f_hat||
+    3. ||(I - P_j) (f_hat - f_true)||
+    4. ||(I - P_j) (f_hat - f_true)|| / ||f_hat - f_true||
+    
+    Expected pattern:
+    - Diagonal (i=j): LOW values → predictions stay in correct subspace
+    - Off-diagonal (i≠j): HIGH values → predictions orthogonal to wrong subspaces
+    
+    Args:
+        model: Trained model
+        dataset: ProjectedTargetFunctionDataset with interval-based projections
+        device: torch device
+        config: Configuration object
+        n_test_per_interval: Number of test points per interval
+        
+    Returns:
+        Dictionary with metric matrices and summary statistics
+    """
     model.eval()
-
-    # Sample many points to estimate learned subspace
-    eval_data = dataset.generate_eval_data(
-        num_samples=1000,
-        eval_seed=config.experiment.seed + 2000,
-    )
-
-    c_eval = eval_data["c"].to(device)
-    x_true = eval_data["x"]
-
+    
+    num_intervals = dataset.num_intervals
+    target_dim = dataset.target_dim
+    c_min = dataset.c_min
+    c_max = dataset.c_max
+    
+    results = {}
+    
     with torch.no_grad():
-        # Initial distribution
-        if config.training.initial_dist == "gaussian":
-            x_0 = torch.randn_like(x_true).to(device)
-        else:
-            x_0 = torch.zeros_like(x_true).to(device)
+        # Create 10x10 matrices for each of the four metrics
+        matrices = {
+            1: np.zeros((num_intervals, num_intervals)),  # ||(I - P_j) f_hat||
+            2: np.zeros((num_intervals, num_intervals)),  # normalized
+            3: np.zeros((num_intervals, num_intervals)),  # ||(I - P_j) (f_hat - f_true)||
+            4: np.zeros((num_intervals, num_intervals)),  # normalized
+        }
+        
+        # For each test interval i
+        for i in range(num_intervals):
+            # Sample points from interval i
+            interval_start = c_min + (i / num_intervals) * (c_max - c_min)
+            interval_end = c_min + ((i + 1) / num_intervals) * (c_max - c_min)
+            
+            test_points = np.linspace(interval_start, interval_end, n_test_per_interval)
+            c_tensor = torch.FloatTensor(test_points).unsqueeze(1).to(device)
+            
+            # Get model predictions
+            if config.training.initial_dist == "gaussian":
+                x_0 = torch.randn(len(test_points), target_dim, device=device)
+            else:
+                x_0 = torch.zeros(len(test_points), target_dim, device=device)
+            
+            f_hat = integrate(
+                model=model,
+                x_0=x_0,
+                c=c_tensor,
+                n_steps=config.evaluation.num_eval_steps,
+                method=config.evaluation.integration_method,
+                mode=config.experiment.mode,
+            )
+            f_hat_np = f_hat.cpu().numpy()
+            
+            # Get ground truth values (from dataset's base function + projection)
+            eval_data = dataset.base_dataset.generate_eval_data(
+                num_samples=len(test_points),
+                eval_seed=config.experiment.seed + 3000 + i,
+            )
+            # Manually set c values to our test points
+            eval_data["c"] = c_tensor.cpu()
+            f_base = eval_data["x"].numpy()
+            
+            # Apply true projections to get f_true
+            f_true_list = []
+            for idx, c_val in enumerate(test_points):
+                interval_id = dataset._get_interval_id(c_val)
+                P_true = dataset.projection_matrices[interval_id].numpy()
+                f_true_list.append(P_true @ f_base[idx])
+            f_true_np = np.array(f_true_list)
+            
+            # For each projection matrix j
+            for j in range(num_intervals):
+                # Get projection matrix P_j
+                P_j = dataset.projection_matrices[j].numpy()
+                
+                # Compute complement projection (I - P_j)
+                I_minus_P = np.eye(target_dim) - P_j
+                
+                # Metric 1: ||(I - P_j) f_hat||
+                complement_f_hat = f_hat_np @ I_minus_P.T
+                complement_f_hat_norms = np.linalg.norm(complement_f_hat, axis=1)
+                matrices[1][i, j] = np.mean(complement_f_hat_norms)
+                
+                # Metric 2: ||(I - P_j) f_hat|| / ||f_hat||
+                f_hat_norms = np.linalg.norm(f_hat_np, axis=1)
+                normalized_complement_f_hat = np.divide(
+                    complement_f_hat_norms,
+                    f_hat_norms,
+                    out=np.zeros_like(complement_f_hat_norms),
+                    where=(f_hat_norms != 0),
+                )
+                matrices[2][i, j] = np.mean(normalized_complement_f_hat)
+                
+                # Metric 3: ||(I - P_j) (f_hat - f_true)||
+                error_vector = f_hat_np - f_true_np
+                complement_error = error_vector @ I_minus_P.T
+                complement_error_norms = np.linalg.norm(complement_error, axis=1)
+                matrices[3][i, j] = np.mean(complement_error_norms)
+                
+                # Metric 4: ||(I - P_j) (f_hat - f_true)|| / ||f_hat - f_true||
+                error_norms = np.linalg.norm(error_vector, axis=1)
+                normalized_complement_error = np.divide(
+                    complement_error_norms,
+                    error_norms,
+                    out=np.zeros_like(complement_error_norms),
+                    where=(error_norms != 0),
+                )
+                matrices[4][i, j] = np.mean(normalized_complement_error)
+        
+        # Store all metric matrices
+        for metric_id in [1, 2, 3, 4]:
+            results[f"subspace_complement_matrix_{metric_id}"] = matrices[metric_id]
+            
+            # Add summary statistics
+            diagonal_mean = np.mean(np.diag(matrices[metric_id]))
+            off_diagonal_mask = ~np.eye(num_intervals, dtype=bool)
+            off_diagonal_mean = np.mean(matrices[metric_id][off_diagonal_mask])
+            
+            results[f"subspace_diagonal_mean_{metric_id}"] = diagonal_mean
+            results[f"subspace_off_diagonal_mean_{metric_id}"] = off_diagonal_mean
+    
+    model.train()
+    return results
 
-        # Get predictions
-        x_pred = integrate(
-            model=model,
-            x_0=x_0,
-            c=c_eval,
-            n_steps=config.evaluation.num_eval_steps,
-            method=config.evaluation.integration_method,
-            mode=config.experiment.mode,
-        )
 
-        x_pred_np = x_pred.cpu().numpy()
+def evaluate_subspace_metric_adjacent(
+    model,
+    dataset,
+    device,
+    config,
+    n_test_per_boundary: int = 20,
+    boundary_width: float = 0.03,
+):
+    """
+    Evaluate subspace metrics at boundary regions between adjacent intervals.
+    
+    For each boundary point c_i (i=1 to 9), tests points in [c_i - width, c_i + width]
+    against combined projection subspace P_{i-1} ∪ P_i.
+    
+    Measures whether the model creates smooth transitions or "jumps" between subspaces.
+    
+    Computes 4 metrics:
+    1. ||(I - P_{i-1,i}) f_hat||
+    2. ||(I - P_{i-1,i}) f_hat|| / ||f_hat||
+    3. ||(I - P_{i-1,i}) (f_hat - f_true)||
+    4. ||(I - P_{i-1,i}) (f_hat - f_true)|| / ||f_hat - f_true||
+    
+    Args:
+        model: Trained model
+        dataset: ProjectedTargetFunctionDataset with interval-based projections
+        device: torch device
+        config: Configuration object
+        n_test_per_boundary: Number of test points per boundary region
+        boundary_width: Width of boundary region around each boundary point
+        
+    Returns:
+        Dictionary with boundary metrics for all 4 metrics
+    """
+    model.eval()
+    
+    num_intervals = dataset.num_intervals
+    target_dim = dataset.target_dim
+    low_dim = dataset.low_dim
+    c_min = dataset.c_min
+    c_max = dataset.c_max
+    
+    results = {}
+    
+    with torch.no_grad():
+        # Initialize arrays for each metric
+        boundary_metrics = {
+            1: [],  # ||(I - P) f_hat||
+            2: [],  # normalized
+            3: [],  # ||(I - P) (f_hat - f_true)||
+            4: [],  # normalized
+        }
+        
+        # For each boundary point c_i (skip c_0=c_min and c_10=c_max)
+        for i in range(1, num_intervals):
+            c_i = c_min + (i / num_intervals) * (c_max - c_min)
+            
+            # Create test interval [c_i - width, c_i + width]
+            interval_start = max(c_min, c_i - boundary_width)
+            interval_end = min(c_max, c_i + boundary_width)
+            
+            test_points = np.linspace(interval_start, interval_end, n_test_per_boundary)
+            c_tensor = torch.FloatTensor(test_points).unsqueeze(1).to(device)
+            
+            # Get model predictions
+            if config.training.initial_dist == "gaussian":
+                x_0 = torch.randn(len(test_points), target_dim, device=device)
+            else:
+                x_0 = torch.zeros(len(test_points), target_dim, device=device)
+            
+            f_hat = integrate(
+                model=model,
+                x_0=x_0,
+                c=c_tensor,
+                n_steps=config.evaluation.num_eval_steps,
+                method=config.evaluation.integration_method,
+                mode=config.experiment.mode,
+            )
+            f_hat_np = f_hat.cpu().numpy()
+            
+            # Get ground truth values
+            eval_data = dataset.base_dataset.generate_eval_data(
+                num_samples=len(test_points),
+                eval_seed=config.experiment.seed + 4000 + i,
+            )
+            eval_data["c"] = c_tensor.cpu()
+            f_base = eval_data["x"].numpy()
+            
+            # Apply true projections
+            f_true_list = []
+            for idx, c_val in enumerate(test_points):
+                interval_id = dataset._get_interval_id(c_val)
+                P_true = dataset.projection_matrices[interval_id].numpy()
+                f_true_list.append(P_true @ f_base[idx])
+            f_true_np = np.array(f_true_list)
+            
+            # Combine P_{i-1} and P_i subspaces
+            P_i_minus_1 = dataset.projection_matrices[i - 1].numpy()
+            P_i = dataset.projection_matrices[i].numpy()
+            
+            # Combine by concatenating column spaces
+            combined_columns = np.hstack([P_i_minus_1, P_i])  # (target_dim, 2*low_dim)
+            
+            # SVD to get orthonormal basis for combined subspace
+            U, s, Vt = np.linalg.svd(combined_columns, full_matrices=False)
+            rank_threshold = 1e-10
+            valid_dims = np.sum(s > rank_threshold)
+            valid_dims = min(valid_dims, 2 * low_dim)  # At most 2*low_dim dimensions
+            
+            U_reduced = U[:, :valid_dims]
+            P_combined = U_reduced @ U_reduced.T  # Combined projection matrix
+            
+            # Compute complement projection (I - P_combined)
+            I_minus_P = np.eye(target_dim) - P_combined
+            
+            # Metric 1: ||(I - P) f_hat||
+            complement_f_hat = f_hat_np @ I_minus_P.T
+            complement_f_hat_norms = np.linalg.norm(complement_f_hat, axis=1)
+            metric_1 = np.mean(complement_f_hat_norms)
+            
+            # Metric 2: ||(I - P) f_hat|| / ||f_hat||
+            f_hat_norms = np.linalg.norm(f_hat_np, axis=1)
+            normalized_complement_f_hat = np.divide(
+                complement_f_hat_norms,
+                f_hat_norms,
+                out=np.zeros_like(complement_f_hat_norms),
+                where=(f_hat_norms != 0),
+            )
+            metric_2 = np.mean(normalized_complement_f_hat)
+            
+            # Metric 3: ||(I - P) (f_hat - f_true)||
+            error_vector = f_hat_np - f_true_np
+            complement_error = error_vector @ I_minus_P.T
+            complement_error_norms = np.linalg.norm(complement_error, axis=1)
+            metric_3 = np.mean(complement_error_norms)
+            
+            # Metric 4: ||(I - P) (f_hat - f_true)|| / ||f_hat - f_true||
+            error_norms = np.linalg.norm(error_vector, axis=1)
+            normalized_complement_error = np.divide(
+                complement_error_norms,
+                error_norms,
+                out=np.zeros_like(complement_error_norms),
+                where=(error_norms != 0),
+            )
+            metric_4 = np.mean(normalized_complement_error)
+            
+            # Store all metrics
+            boundary_metrics[1].append(metric_1)
+            boundary_metrics[2].append(metric_2)
+            boundary_metrics[3].append(metric_3)
+            boundary_metrics[4].append(metric_4)
+        
+        # Convert to arrays and store results
+        for metric_id in [1, 2, 3, 4]:
+            results[f"boundary_metrics_{metric_id}"] = np.array(boundary_metrics[metric_id])
+            results[f"boundary_mean_{metric_id}"] = np.mean(boundary_metrics[metric_id])
+    
+    model.train()
+    return results
 
-    # Compute PCA on predictions
-    from numpy.linalg import svd
 
-    # Center the data
-    x_mean = np.mean(x_pred_np, axis=0)
-    x_centered = x_pred_np - x_mean
-
-    # SVD
-    U, S, Vt = svd(x_centered, full_matrices=False)
-
-    # Get explained variance
-    total_variance = np.sum(S**2)
-    explained_variance = S**2 / total_variance
-
-    # Get true projection matrix
-    P_true = dataset.P.cpu().numpy()
-
-    # Compute alignment between learned and true subspaces
-    # Use top low_dim principal components
-    V_learned = Vt[: config.dataset.low_dim].T  # (target_dim, low_dim)
-
-    # True subspace basis (columns of projection matrix span the range)
-    U_true, _, _ = svd(P_true, full_matrices=False)
-    V_true = U_true[:, : config.dataset.low_dim]  # (target_dim, low_dim)
-
-    # Compute subspace alignment using Frobenius norm of difference of projection matrices
-    P_learned = V_learned @ V_learned.T
-    P_true_normalized = V_true @ V_true.T
-
-    alignment_error = np.linalg.norm(P_learned - P_true_normalized, "fro")
-
-    metrics = {
-        "subspace_alignment_error": alignment_error,
-        "explained_variance_ratio": explained_variance[: config.dataset.low_dim].sum(),
-        "top_singular_values": S[: config.dataset.low_dim].tolist(),
+def plot_subspace_analysis(
+    subspace_results: dict,
+    save_dir: Path,
+    mode: str,
+    loss_type: str,
+):
+    """
+    Plot subspace complement analysis as heatmaps for all 4 metrics.
+    
+    Creates a grid of heatmaps showing the 10×10 matrices for each metric.
+    
+    Args:
+        subspace_results: Dictionary from evaluate_subspace_metric()
+        save_dir: Directory to save plots
+        mode: Experiment mode (regression/flow)
+        loss_type: Loss type (l2, etc.)
+    """
+    # Extract matrices for all 4 metrics
+    matrices = {}
+    for metric_id in [1, 2, 3, 4]:
+        key = f"subspace_complement_matrix_{metric_id}"
+        if key in subspace_results:
+            matrices[metric_id] = subspace_results[key]
+    
+    if not matrices:
+        logger.warning("No subspace matrices found for plotting")
+        return
+    
+    # Metric names with LaTeX formatting
+    metric_names = {
+        1: r"$\|(I - P_j)\hat{f}\|$",
+        2: r"$\frac{\|(I - P_j)\hat{f}\|}{\|\hat{f}\|}$",
+        3: r"$\|(I - P_j)(\hat{f} - f_{\mathrm{true}})\|$",
+        4: r"$\frac{\|(I - P_j)(\hat{f} - f_{\mathrm{true}})\|}{\|\hat{f} - f_{\mathrm{true}}\|}$",
     }
-
-    logger.info("Subspace analysis:")
-    logger.info(f"  Alignment error: {alignment_error:.4f}")
-    logger.info(
-        f"  Explained variance ratio: {metrics['explained_variance_ratio']:.4f}"
+    
+    # Create figure with subplots for each metric
+    n_metrics = len(matrices)
+    fig, axes = plt.subplots(1, n_metrics, figsize=(6 * n_metrics, 6))
+    if n_metrics == 1:
+        axes = [axes]
+    
+    for idx, metric_id in enumerate(sorted(matrices.keys())):
+        matrix = matrices[metric_id]
+        ax = axes[idx]
+        
+        # Create heatmap
+        im = ax.imshow(matrix, cmap="viridis", aspect="auto")
+        ax.set_title(f"Metric {metric_id}: {metric_names[metric_id]}", fontsize=12, pad=20)
+        ax.set_xlabel("Projection Matrix Index j", fontsize=10)
+        ax.set_ylabel("Test Interval Index i", fontsize=10)
+        
+        # Add colorbar
+        plt.colorbar(im, ax=ax)
+        
+        # Add text annotations
+        for i in range(matrix.shape[0]):
+            for j in range(matrix.shape[1]):
+                text_color = "white" if matrix[i, j] < matrix.max() * 0.5 else "black"
+                ax.text(
+                    j, i, f"{matrix[i, j]:.3f}",
+                    ha="center", va="center",
+                    color=text_color, fontsize=8,
+                )
+        
+        # Set ticks
+        ax.set_xticks(range(matrix.shape[1]))
+        ax.set_yticks(range(matrix.shape[0]))
+    
+    plt.suptitle(
+        f"Subspace Analysis - {mode} - {loss_type}",
+        fontsize=16, y=1.02
     )
+    plt.tight_layout()
+    
+    # Save plot
+    save_path = save_dir / f"subspace_analysis_{mode}_{loss_type}.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    
+    logger.info(f"Saved subspace analysis plot to {save_path}")
 
-    return metrics
+
+def plot_boundary_analysis(
+    boundary_results: dict,
+    save_dir: Path,
+    mode: str,
+    loss_type: str,
+    metric_id: int = 2,
+):
+    """
+    Plot boundary subspace analysis for a specific metric.
+    
+    Creates a 10×10 matrix visualization where only the off-diagonal (boundary) 
+    positions are filled, showing the boundary metrics.
+    
+    Args:
+        boundary_results: Dictionary from evaluate_subspace_metric_adjacent()
+        save_dir: Directory to save plots
+        mode: Experiment mode (regression/flow)
+        loss_type: Loss type (l2, etc.)
+        metric_id: Which metric to plot (default: 2 for normalized version)
+    """
+    key = f"boundary_metrics_{metric_id}"
+    if key not in boundary_results:
+        logger.warning(f"No boundary metrics found for metric {metric_id}")
+        return
+    
+    boundary_metrics = boundary_results[key]
+    
+    # Metric names
+    metric_names = {
+        1: r"$\|(I - P)\hat{f}\|$",
+        2: r"$\frac{\|(I - P)\hat{f}\|}{\|\hat{f}\|}$",
+        3: r"$\|(I - P)(\hat{f} - f_{\mathrm{true}})\|$",
+        4: r"$\frac{\|(I - P)(\hat{f} - f_{\mathrm{true}})\|}{\|\hat{f} - f_{\mathrm{true}}\|}$",
+    }
+    
+    # Create 10×10 matrix with NaN for non-boundary positions
+    num_intervals = 10
+    boundary_matrix = np.full((num_intervals, num_intervals), np.nan)
+    
+    # Fill boundary metrics below the main diagonal
+    # boundary_metrics[i] corresponds to boundary between interval i and i+1
+    for i in range(len(boundary_metrics)):
+        # Place at position [i+1, i] (below diagonal)
+        boundary_matrix[i + 1, i] = boundary_metrics[i]
+    
+    # Create figure
+    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+    
+    # Plot heatmap
+    im = ax.imshow(boundary_matrix, cmap="viridis", aspect="auto", vmin=0)
+    ax.set_title(
+        f"Boundary Analysis - Metric {metric_id}: {metric_names[metric_id]}",
+        fontsize=14, pad=20
+    )
+    ax.set_xlabel("Interval Index", fontsize=12)
+    ax.set_ylabel("Interval Index", fontsize=12)
+    
+    # Add colorbar
+    plt.colorbar(im, ax=ax)
+    
+    # Add text annotations for non-NaN values
+    for i in range(num_intervals):
+        for j in range(num_intervals):
+            if not np.isnan(boundary_matrix[i, j]):
+                # This is a boundary position
+                boundary_idx = min(i, j)
+                ax.text(
+                    j, i,
+                    f"{boundary_matrix[i, j]:.3f}",
+                    ha="center", va="center",
+                    color="white", fontsize=9, weight="bold",
+                )
+    
+    # Set ticks and labels
+    ax.set_xticks(range(num_intervals))
+    ax.set_yticks(range(num_intervals))
+    ax.set_xticklabels([f"$I_{{{i}}}$" for i in range(num_intervals)])
+    ax.set_yticklabels([f"$I_{{{i}}}$" for i in range(num_intervals)])
+    
+    plt.suptitle(
+        f"Boundary Subspace Analysis - {mode} - {loss_type}",
+        fontsize=16
+    )
+    plt.tight_layout()
+    
+    # Save plot
+    save_path = save_dir / f"boundary_analysis_{mode}_{loss_type}_metric{metric_id}.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    
+    logger.info(f"Saved boundary analysis plot to {save_path}")
+
+
+def plot_predictions_grid(
+    c_values: np.ndarray,
+    true_values: np.ndarray,
+    pred_values: np.ndarray,
+    save_dir: Path,
+    mode: str,
+    loss_type: str,
+    num_dims_to_plot: int = 8,
+):
+    """
+    Plot predictions vs true values for multiple dimensions in a grid.
+    
+    Args:
+        c_values: Conditioning values, shape (n_samples,)
+        true_values: True target values, shape (n_samples, target_dim)
+        pred_values: Predicted values, shape (n_samples, target_dim)
+        save_dir: Directory to save plot
+        mode: Experiment mode
+        loss_type: Loss type
+        num_dims_to_plot: Number of dimensions to plot (default: 8)
+    """
+    target_dim = true_values.shape[1]
+    num_dims_to_plot = min(num_dims_to_plot, target_dim)
+    
+    # Create grid: 3 rows x 3 cols = 9 subplots (one extra for flexibility)
+    n_cols = 3
+    n_rows = (num_dims_to_plot + n_cols - 1) // n_cols  # Ceiling division
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 5 * n_rows))
+    axes = axes.flatten() if num_dims_to_plot > 1 else [axes]
+    
+    for dim in range(num_dims_to_plot):
+        ax = axes[dim]
+        
+        # Plot true function
+        ax.plot(c_values, true_values[:, dim], 'b-', label='True', linewidth=2, alpha=0.7)
+        
+        # Plot predictions
+        ax.plot(c_values, pred_values[:, dim], 'r--', label='Predicted', linewidth=2, alpha=0.7)
+        
+        ax.set_title(f"Dimension {dim}", fontsize=12)
+        ax.set_xlabel("c (conditioning)", fontsize=10)
+        ax.set_ylabel(f"x_{dim}", fontsize=10)
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3)
+    
+    # Hide unused subplots
+    for dim in range(num_dims_to_plot, len(axes)):
+        axes[dim].set_visible(False)
+    
+    plt.suptitle(
+        f"Predictions vs True Values (All Dimensions) - {mode} - {loss_type}",
+        fontsize=16
+    )
+    plt.tight_layout()
+    
+    # Save plot
+    save_path = save_dir / f"predictions_grid_{mode}_{loss_type}.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    
+    logger.info(f"Saved multi-dimension predictions plot to {save_path}")
 
 
 def evaluate(model, dataset, device, config):
@@ -255,17 +733,50 @@ def evaluate(model, dataset, device, config):
         "l2_per_dim_std": np.std(l2_per_dim),
     }
 
-    # Subspace analysis
-    subspace_metrics = analyze_subspace(model, dataset, device, config)
-    metrics.update(subspace_metrics)
+    # Interval-based subspace analysis
+    if config.evaluation.analyze_subspace:
+        logger.info("Computing interval-based subspace metrics...")
+        
+        # Main subspace metrics (10x10 matrices)
+        subspace_results = evaluate_subspace_metric(
+            model=model,
+            dataset=dataset,
+            device=device,
+            config=config,
+        )
+        
+        # Add summary statistics to main metrics (for CSV logging)
+        for key, value in subspace_results.items():
+            if "mean" in key:  # Only add summary statistics
+                metrics[key] = value
+        
+        # Boundary metrics
+        boundary_results = evaluate_subspace_metric_adjacent(
+            model=model,
+            dataset=dataset,
+            device=device,
+            config=config,
+        )
+        
+        # Add boundary summary statistics
+        for key, value in boundary_results.items():
+            if "mean" in key:
+                metrics[key] = value
+        
+        logger.info(f"Subspace diagonal mean (metric 4): {subspace_results.get('subspace_diagonal_mean_4', 0):.4f}")
+        logger.info(f"Subspace off-diagonal mean (metric 4): {subspace_results.get('subspace_off_diagonal_mean_4', 0):.4f}")
+        logger.info(f"Boundary mean (metric 2): {boundary_results.get('boundary_mean_2', 0):.4f}")
+        
+        # Store matrices for plotting (Phase 3)
+        metrics["_subspace_matrices"] = subspace_results
+        metrics["_boundary_matrices"] = boundary_results
 
-    # Prepare data for plotting (all dimensions)
+    # Prepare data for plotting (use first dimension)
+    # Prepare data for plotting
     plot_data = {
         "c_values": c_eval.cpu().numpy().flatten(),
-        "true_values": x_true,  # All dimensions [num_samples, target_dim]
-        "pred_values": x_pred,  # All dimensions [num_samples, target_dim]
-        "l1_per_dim": l1_per_dim,  # Per-dimension L1 errors
-        "l2_per_dim": l2_per_dim,  # Per-dimension L2 errors
+        "true_values": x_true,  # All dimensions
+        "pred_values": x_pred,  # All dimensions
     }
 
     return metrics, plot_data
@@ -377,7 +888,10 @@ def main(config_path: str, overrides: dict = None):
         # Evaluate
         if (epoch + 1) % config.training.eval_interval == 0:
             metrics, plot_data = evaluate(model, train_dataset, device, config)
-            log_evaluation(metrics, prefix=f"Epoch {epoch + 1}")
+            
+            # Filter out numpy arrays from logging
+            metrics_for_logging = {k: v for k, v in metrics.items() if not k.startswith('_')}
+            log_evaluation(metrics_for_logging, prefix=f"Epoch {epoch + 1}")
 
             # Log to CSV
             metrics_logger.log(
@@ -419,7 +933,10 @@ def main(config_path: str, overrides: dict = None):
     logger.info("=" * 80)
 
     metrics, plot_data = evaluate(model, train_dataset, device, config)
-    log_evaluation(metrics, prefix="Final")
+    
+    # Filter out numpy arrays from logging (keep them for plotting)
+    metrics_for_logging = {k: v for k, v in metrics.items() if not k.startswith('_')}
+    log_evaluation(metrics_for_logging, prefix="Final")
 
     # Create plots
     plots_dir = output_dir / "plots"
@@ -432,110 +949,56 @@ def main(config_path: str, overrides: dict = None):
         title=f"{config.experiment.name} - Training Curves",
     )
 
-    # Grid visualization for all dimensions
-    target_dim = config.dataset.target_dim
-    c_values = plot_data["c_values"]
-    true_values = plot_data["true_values"]
-    pred_values = plot_data["pred_values"]
-    l1_per_dim = plot_data["l1_per_dim"]
-    l2_per_dim = plot_data["l2_per_dim"]
+    # Multi-dimension predictions grid
+    plot_predictions_grid(
+        c_values=plot_data["c_values"],
+        true_values=plot_data["true_values"],
+        pred_values=plot_data["pred_values"],
+        save_dir=plots_dir,
+        mode=config.experiment.mode,
+        loss_type=config.training.loss_type,
+        num_dims_to_plot=min(8, config.dataset.target_dim),
+    )
 
-    # Determine grid layout
-    n_cols = min(4, target_dim)
-    n_rows = (target_dim + n_cols - 1) // n_cols
+    # Predictions (first dimension only) - for backward compatibility
+    plot_predictions(
+        plot_data["c_values"],
+        plot_data["true_values"][:, 0],
+        plot_data["pred_values"][:, 0],
+        save_path=plots_dir / "predictions_dim0.png",
+        title=f"{config.experiment.name} - Predictions (Dim 0)",
+    )
 
-    # 1. Predictions grid
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
-    if target_dim == 1:
-        axes = np.array([axes])
-    axes = axes.flatten()
+    # Errors (first dimension)
+    errors = np.abs(plot_data["pred_values"][:, 0] - plot_data["true_values"][:, 0])
+    plot_errors(
+        plot_data["c_values"],
+        errors,
+        save_path=plots_dir / "errors_dim0.png",
+        title=f"{config.experiment.name} - Prediction Errors (Dim 0)",
+    )
 
-    for dim in range(target_dim):
-        ax = axes[dim]
-        ax.scatter(c_values, true_values[:, dim], alpha=0.5, s=20, label="True")
-        ax.scatter(c_values, pred_values[:, dim], alpha=0.5, s=20, label="Predicted")
-        ax.set_xlabel("c")
-        ax.set_ylabel(f"x[{dim}]")
-        ax.set_title(f"Dimension {dim}")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-
-    # Hide unused subplots
-    for dim in range(target_dim, len(axes)):
-        axes[dim].axis("off")
-
-    plt.tight_layout()
-    plt.savefig(plots_dir / "predictions_all_dims_grid.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
-
-    # 2. L1 Errors grid
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
-    if target_dim == 1:
-        axes = np.array([axes])
-    axes = axes.flatten()
-
-    for dim in range(target_dim):
-        ax = axes[dim]
-        l1_errors = np.abs(pred_values[:, dim] - true_values[:, dim])
-        ax.scatter(c_values, l1_errors, alpha=0.5, s=20, c="red")
-        ax.set_xlabel("c")
-        ax.set_ylabel("L1 Error")
-        ax.set_title(f"Dimension {dim} (mean: {l1_per_dim[dim]:.4f})")
-        ax.grid(True, alpha=0.3)
-
-    # Hide unused subplots
-    for dim in range(target_dim, len(axes)):
-        axes[dim].axis("off")
-
-    plt.tight_layout()
-    plt.savefig(plots_dir / "l1_errors_all_dims_grid.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
-
-    # 3. L2 Errors grid
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
-    if target_dim == 1:
-        axes = np.array([axes])
-    axes = axes.flatten()
-
-    for dim in range(target_dim):
-        ax = axes[dim]
-        l2_errors = (pred_values[:, dim] - true_values[:, dim]) ** 2
-        ax.scatter(c_values, l2_errors, alpha=0.5, s=20, c="orange")
-        ax.set_xlabel("c")
-        ax.set_ylabel("L2 Error (squared)")
-        ax.set_title(f"Dimension {dim} (RMSE: {l2_per_dim[dim]:.4f})")
-        ax.grid(True, alpha=0.3)
-
-    # Hide unused subplots
-    for dim in range(target_dim, len(axes)):
-        axes[dim].axis("off")
-
-    plt.tight_layout()
-    plt.savefig(plots_dir / "l2_errors_all_dims_grid.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
-
-    # 4. Summary plots: Error vs Dimension
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-
-    # L1 error vs dimension
-    axes[0].bar(range(target_dim), l1_per_dim, color="red", alpha=0.6)
-    axes[0].set_xlabel("Dimension")
-    axes[0].set_ylabel("Mean L1 Error")
-    axes[0].set_title("L1 Error vs Dimension")
-    axes[0].grid(True, alpha=0.3, axis="y")
-    axes[0].set_xticks(range(target_dim))
-
-    # L2 error vs dimension
-    axes[1].bar(range(target_dim), l2_per_dim, color="orange", alpha=0.6)
-    axes[1].set_xlabel("Dimension")
-    axes[1].set_ylabel("RMSE")
-    axes[1].set_title("L2 Error (RMSE) vs Dimension")
-    axes[1].grid(True, alpha=0.3, axis="y")
-    axes[1].set_xticks(range(target_dim))
-
-    plt.tight_layout()
-    plt.savefig(plots_dir / "error_vs_dimension.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    # Subspace analysis plots
+    if config.evaluation.analyze_subspace and "_subspace_matrices" in metrics:
+        logger.info("Creating subspace analysis plots...")
+        
+        # Plot subspace heatmaps
+        plot_subspace_analysis(
+            subspace_results=metrics["_subspace_matrices"],
+            save_dir=plots_dir,
+            mode=config.experiment.mode,
+            loss_type=config.training.loss_type,
+        )
+        
+        # Plot boundary analysis
+        if "_boundary_matrices" in metrics:
+            plot_boundary_analysis(
+                boundary_results=metrics["_boundary_matrices"],
+                save_dir=plots_dir,
+                mode=config.experiment.mode,
+                loss_type=config.training.loss_type,
+                metric_id=2,  # Focus on normalized metric
+            )
 
     # Save final checkpoint
     save_checkpoint(

@@ -6,6 +6,7 @@ experiment:
   name: "proj_experiment"
   mode: "mip"  # 'regression' or 'flow' or 'mip'
   seed: 42
+  seed: 42
   device: "cuda"  # or "cpu"
   output_dir: "./outputs/proj"
 
@@ -20,12 +21,13 @@ dataset:
   c_max: 1.0
   
   # Target function parameters
-  num_components: 3
+  num_components: 8
   weight_strategy: "uniform"  # or "inverse_freq"
   sampling_strategy: "grid"  # or "random"
   
   # Projection parameters
-  low_dim: 2  # Dimension of subspace (rank of projection matrix)
+  low_dim: 3  # Dimension of subspace (rank of projection matrix)
+  num_intervals: 10  # Number of intervals for piecewise projections
   
   # Seeds for reproducibility
   freq_seed: 42
@@ -48,7 +50,7 @@ training:
   num_epochs: 50000
   learning_rate: 0.001
   
-  # Logging intervals
+  # Logging
   log_interval: 1000
   eval_interval: 50000
   save_interval: 50000
