@@ -42,7 +42,7 @@ from toyexp.common.utils import (
     set_seed,
 )
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def create_datasets(config):
@@ -156,8 +156,8 @@ def evaluate_subspace_metric(
     4. ||(I - P_j) (f_hat - f_true)|| / ||f_hat - f_true||
     
     Expected pattern:
-    - Diagonal (i=j): LOW values → predictions stay in correct subspace
-    - Off-diagonal (i≠j): HIGH values → predictions orthogonal to wrong subspaces
+    - Diagonal (i=j): LOW values â†’ predictions stay in correct subspace
+    - Off-diagonal (iâ‰ j): HIGH values â†’ predictions orthogonal to wrong subspaces
     
     Args:
         model: Trained model
@@ -296,7 +296,7 @@ def evaluate_subspace_metric_adjacent(
     Evaluate subspace metrics at boundary regions between adjacent intervals.
     
     For each boundary point c_i (i=1 to 9), tests points in [c_i - width, c_i + width]
-    against combined projection subspace P_{i-1} ∪ P_i.
+    against combined projection subspace P_{i-1} âˆª P_i.
     
     Measures whether the model creates smooth transitions or "jumps" between subspaces.
     
@@ -453,7 +453,7 @@ def plot_subspace_analysis(
     """
     Plot subspace complement analysis as heatmaps for all 4 metrics.
     
-    Creates a grid of heatmaps showing the 10×10 matrices for each metric.
+    Creates a grid of heatmaps showing the 10Ã—10 matrices for each metric.
     
     Args:
         subspace_results: Dictionary from evaluate_subspace_metric()
@@ -537,7 +537,7 @@ def plot_boundary_analysis(
     """
     Plot boundary subspace analysis for a specific metric.
     
-    Creates a 10×10 matrix visualization where only the off-diagonal (boundary) 
+    Creates a 10Ã—10 matrix visualization where only the off-diagonal (boundary) 
     positions are filled, showing the boundary metrics.
     
     Args:
@@ -562,7 +562,7 @@ def plot_boundary_analysis(
         4: r"$\frac{\|(I - P)(\hat{f} - f_{\mathrm{true}})\|}{\|\hat{f} - f_{\mathrm{true}}\|}$",
     }
     
-    # Create 10×10 matrix with NaN for non-boundary positions
+    # Create 10Ã—10 matrix with NaN for non-boundary positions
     num_intervals = 10
     boundary_matrix = np.full((num_intervals, num_intervals), np.nan)
     
@@ -684,6 +684,138 @@ def plot_predictions_grid(
     logger.info(f"Saved multi-dimension predictions plot to {save_path}")
 
 
+def plot_l1_errors_grid(
+    c_values: np.ndarray,
+    true_values: np.ndarray,
+    pred_values: np.ndarray,
+    save_dir: Path,
+    mode: str,
+    loss_type: str,
+    num_dims_to_plot: int = 8,
+):
+    """
+    Plot L1 errors for multiple dimensions in a grid.
+    
+    Args:
+        c_values: Conditioning values, shape (n_samples,)
+        true_values: True target values, shape (n_samples, target_dim)
+        pred_values: Predicted values, shape (n_samples, target_dim)
+        save_dir: Directory to save plot
+        mode: Experiment mode
+        loss_type: Loss type
+        num_dims_to_plot: Number of dimensions to plot (default: 8)
+    """
+    target_dim = true_values.shape[1]
+    num_dims_to_plot = min(num_dims_to_plot, target_dim)
+    
+    # Create grid
+    n_cols = 3
+    n_rows = (num_dims_to_plot + n_cols - 1) // n_cols
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 5 * n_rows))
+    axes = axes.flatten() if num_dims_to_plot > 1 else [axes]
+    
+    for dim in range(num_dims_to_plot):
+        ax = axes[dim]
+        
+        # Compute L1 errors
+        l1_errors = np.abs(pred_values[:, dim] - true_values[:, dim])
+        mean_error = np.mean(l1_errors)
+        
+        # Plot errors
+        ax.scatter(c_values, l1_errors, alpha=0.6, s=10, color="red")
+        ax.axhline(y=mean_error, color="black", linestyle="--", linewidth=1, label=f"Mean={mean_error:.4f}")
+        
+        ax.set_title(f"Dimension {dim}", fontsize=12)
+        ax.set_xlabel("c (conditioning)", fontsize=10)
+        ax.set_ylabel("L1 Error", fontsize=10)
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3)
+    
+    # Hide unused subplots
+    for dim in range(num_dims_to_plot, len(axes)):
+        axes[dim].set_visible(False)
+    
+    plt.suptitle(
+        f"L1 Errors (All Dimensions) - {mode} - {loss_type}",
+        fontsize=16
+    )
+    plt.tight_layout()
+    
+    # Save plot
+    save_path = save_dir / f"l1_errors_grid_{mode}_{loss_type}.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    
+    logger.info(f"Saved L1 errors grid to {save_path}")
+
+
+def plot_l2_errors_grid(
+    c_values: np.ndarray,
+    true_values: np.ndarray,
+    pred_values: np.ndarray,
+    save_dir: Path,
+    mode: str,
+    loss_type: str,
+    num_dims_to_plot: int = 8,
+):
+    """
+    Plot L2 (squared) errors for multiple dimensions in a grid.
+    
+    Args:
+        c_values: Conditioning values, shape (n_samples,)
+        true_values: True target values, shape (n_samples, target_dim)
+        pred_values: Predicted values, shape (n_samples, target_dim)
+        save_dir: Directory to save plot
+        mode: Experiment mode
+        loss_type: Loss type
+        num_dims_to_plot: Number of dimensions to plot (default: 8)
+    """
+    target_dim = true_values.shape[1]
+    num_dims_to_plot = min(num_dims_to_plot, target_dim)
+    
+    # Create grid
+    n_cols = 3
+    n_rows = (num_dims_to_plot + n_cols - 1) // n_cols
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 5 * n_rows))
+    axes = axes.flatten() if num_dims_to_plot > 1 else [axes]
+    
+    for dim in range(num_dims_to_plot):
+        ax = axes[dim]
+        
+        # Compute L2 (squared) errors
+        l2_errors = (pred_values[:, dim] - true_values[:, dim]) ** 2
+        mean_error = np.mean(l2_errors)
+        
+        # Plot errors
+        ax.scatter(c_values, l2_errors, alpha=0.6, s=10, color="orange")
+        ax.axhline(y=mean_error, color="black", linestyle="--", linewidth=1, label=f"Mean={mean_error:.4f}")
+        
+        ax.set_title(f"Dimension {dim}", fontsize=12)
+        ax.set_xlabel("c (conditioning)", fontsize=10)
+        ax.set_ylabel("L2 Error (squared)", fontsize=10)
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3)
+    
+    # Hide unused subplots
+    for dim in range(num_dims_to_plot, len(axes)):
+        axes[dim].set_visible(False)
+    
+    plt.suptitle(
+        f"L2 Errors (All Dimensions) - {mode} - {loss_type}",
+        fontsize=16
+    )
+    plt.tight_layout()
+    
+    # Save plot
+    save_path = save_dir / f"l2_errors_grid_{mode}_{loss_type}.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    
+    logger.info(f"Saved L2 errors grid to {save_path}")
+
+
 def evaluate(model, dataset, device, config):
     """Evaluate model on dataset."""
     model.eval()
@@ -733,43 +865,42 @@ def evaluate(model, dataset, device, config):
         "l2_per_dim_std": np.std(l2_per_dim),
     }
 
-    # Interval-based subspace analysis
-    if config.evaluation.analyze_subspace:
-        logger.info("Computing interval-based subspace metrics...")
-        
-        # Main subspace metrics (10x10 matrices)
-        subspace_results = evaluate_subspace_metric(
-            model=model,
-            dataset=dataset,
-            device=device,
-            config=config,
-        )
-        
-        # Add summary statistics to main metrics (for CSV logging)
-        for key, value in subspace_results.items():
-            if "mean" in key:  # Only add summary statistics
-                metrics[key] = value
-        
-        # Boundary metrics
-        boundary_results = evaluate_subspace_metric_adjacent(
-            model=model,
-            dataset=dataset,
-            device=device,
-            config=config,
-        )
-        
-        # Add boundary summary statistics
-        for key, value in boundary_results.items():
-            if "mean" in key:
-                metrics[key] = value
-        
-        logger.info(f"Subspace diagonal mean (metric 4): {subspace_results.get('subspace_diagonal_mean_4', 0):.4f}")
-        logger.info(f"Subspace off-diagonal mean (metric 4): {subspace_results.get('subspace_off_diagonal_mean_4', 0):.4f}")
-        logger.info(f"Boundary mean (metric 2): {boundary_results.get('boundary_mean_2', 0):.4f}")
-        
-        # Store matrices for plotting (Phase 3)
-        metrics["_subspace_matrices"] = subspace_results
-        metrics["_boundary_matrices"] = boundary_results
+    # Interval-based subspace analysis (always computed in train_proj)
+    logger.info("Computing interval-based subspace metrics...")
+    
+    # Main subspace metrics (10x10 matrices)
+    subspace_results = evaluate_subspace_metric(
+        model=model,
+        dataset=dataset,
+        device=device,
+        config=config,
+    )
+    
+    # Add summary statistics to main metrics (for CSV logging)
+    for key, value in subspace_results.items():
+        if "mean" in key:  # Only add summary statistics
+            metrics[key] = value
+    
+    # Boundary metrics
+    boundary_results = evaluate_subspace_metric_adjacent(
+        model=model,
+        dataset=dataset,
+        device=device,
+        config=config,
+    )
+    
+    # Add boundary summary statistics
+    for key, value in boundary_results.items():
+        if "mean" in key:
+            metrics[key] = value
+    
+    logger.info(f"Subspace diagonal mean (metric 4): {subspace_results.get('subspace_diagonal_mean_4', 0):.4f}")
+    logger.info(f"Subspace off-diagonal mean (metric 4): {subspace_results.get('subspace_off_diagonal_mean_4', 0):.4f}")
+    logger.info(f"Boundary mean (metric 2): {boundary_results.get('boundary_mean_2', 0):.4f}")
+    
+    # Store matrices for plotting (Phase 3)
+    metrics["_subspace_matrices"] = subspace_results
+    metrics["_boundary_matrices"] = boundary_results
 
     # Prepare data for plotting (use first dimension)
     # Prepare data for plotting
@@ -799,7 +930,7 @@ def main(config_path: str, overrides: dict = None):
 
     # Setup logging
     setup_logging(
-        name="train_proj",
+        name="",
         level=logging.INFO,
         log_file=output_dir / "train.log",
     )
@@ -959,46 +1090,48 @@ def main(config_path: str, overrides: dict = None):
         loss_type=config.training.loss_type,
         num_dims_to_plot=min(8, config.dataset.target_dim),
     )
-
-    # Predictions (first dimension only) - for backward compatibility
-    plot_predictions(
-        plot_data["c_values"],
-        plot_data["true_values"][:, 0],
-        plot_data["pred_values"][:, 0],
-        save_path=plots_dir / "predictions_dim0.png",
-        title=f"{config.experiment.name} - Predictions (Dim 0)",
+    
+    # L1 errors grid
+    plot_l1_errors_grid(
+        c_values=plot_data["c_values"],
+        true_values=plot_data["true_values"],
+        pred_values=plot_data["pred_values"],
+        save_dir=plots_dir,
+        mode=config.experiment.mode,
+        loss_type=config.training.loss_type,
+        num_dims_to_plot=min(8, config.dataset.target_dim),
+    )
+    
+    # L2 errors grid
+    plot_l2_errors_grid(
+        c_values=plot_data["c_values"],
+        true_values=plot_data["true_values"],
+        pred_values=plot_data["pred_values"],
+        save_dir=plots_dir,
+        mode=config.experiment.mode,
+        loss_type=config.training.loss_type,
+        num_dims_to_plot=min(8, config.dataset.target_dim),
     )
 
-    # Errors (first dimension)
-    errors = np.abs(plot_data["pred_values"][:, 0] - plot_data["true_values"][:, 0])
-    plot_errors(
-        plot_data["c_values"],
-        errors,
-        save_path=plots_dir / "errors_dim0.png",
-        title=f"{config.experiment.name} - Prediction Errors (Dim 0)",
+    # Subspace analysis plots (always generated in train_proj)
+    logger.info("Creating subspace analysis plots...")
+    
+    # Plot subspace heatmaps
+    plot_subspace_analysis(
+        subspace_results=metrics["_subspace_matrices"],
+        save_dir=plots_dir,
+        mode=config.experiment.mode,
+        loss_type=config.training.loss_type,
     )
-
-    # Subspace analysis plots
-    if config.evaluation.analyze_subspace and "_subspace_matrices" in metrics:
-        logger.info("Creating subspace analysis plots...")
-        
-        # Plot subspace heatmaps
-        plot_subspace_analysis(
-            subspace_results=metrics["_subspace_matrices"],
-            save_dir=plots_dir,
-            mode=config.experiment.mode,
-            loss_type=config.training.loss_type,
-        )
-        
-        # Plot boundary analysis
-        if "_boundary_matrices" in metrics:
-            plot_boundary_analysis(
-                boundary_results=metrics["_boundary_matrices"],
-                save_dir=plots_dir,
-                mode=config.experiment.mode,
-                loss_type=config.training.loss_type,
-                metric_id=2,  # Focus on normalized metric
-            )
+    
+    # Plot boundary analysis
+    plot_boundary_analysis(
+        boundary_results=metrics["_boundary_matrices"],
+        save_dir=plots_dir,
+        mode=config.experiment.mode,
+        loss_type=config.training.loss_type,
+        metric_id=2,  # Focus on normalized metric
+    )
 
     # Save final checkpoint
     save_checkpoint(
