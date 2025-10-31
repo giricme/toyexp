@@ -121,14 +121,14 @@ def load_results(output_dir: Path, mode: str, loss_type: str, logger):
         dict: Metrics from best checkpoint, or None if not found
     """
     # Results are saved in: output_dir / mode / loss_type / checkpoints / best_model.pt
-    results_path = output_dir / mode / loss_type / "checkpoints" / "best_model.pt"
+    results_path = output_dir / mode / loss_type / "checkpoints" / "final_model.pt"
     
     if not results_path.exists():
         logger.warning(f"Results not found: {results_path}")
         return None
     
     try:
-        checkpoint = torch.load(results_path, map_location="cpu")
+        checkpoint = torch.load(results_path, map_location="cpu", weights_only=False)
         metrics = checkpoint.get("metrics", {})
         
         logger.info(f"Loaded results from {results_path}")
