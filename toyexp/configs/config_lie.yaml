@@ -56,7 +56,7 @@ training:
   # Optimizer
   learning_rate: 0.001
   batch_size: 32  # Set to dataset size for full-batch training
-  num_epochs: 50000
+  num_epochs: 1000
   
   # Loss
   loss_type: "l2"  # 'l1' or 'l2' (for regression mode)
@@ -71,10 +71,10 @@ training:
   # Logging
   log_interval: 1000
   eval_interval: 50000
-  save_interval: 50000
+  save_interval: 1000
 
 evaluation:
-  num_eval_steps: 9  # ODE integration steps (for flow mode)
+  num_eval_steps: [1, 9]  # ODE integration steps (for flow mode)
   integration_method: "euler"  # 'euler' or 'rk4'
   compute_cosine_similarity: true  # Compute cos_err metrics
   # Initial distribution for flow

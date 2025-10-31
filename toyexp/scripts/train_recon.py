@@ -116,7 +116,7 @@ def train_epoch(model, dataloader, loss_manager, optimizer, device, config):
 
 
 def evaluate(model, dataset, device, config):
-    """Evaluate model on dataset."""
+    """Evaluate model on dataset for all NFE values."""
     model.eval()
 
     # Generate evaluation data
@@ -128,6 +128,13 @@ def evaluate(model, dataset, device, config):
     c_eval = eval_data["c"].to(device)
     x_true = eval_data["x"].cpu().numpy()
 
+    # Handle num_eval_steps as int or list
+    num_eval_steps = config.evaluation.num_eval_steps
+    if isinstance(num_eval_steps, int):
+        num_eval_steps = [num_eval_steps]
+
+    results = []
+
     with torch.no_grad():
         # Initial distribution
         if config.evaluation.initial_dist == "gaussian":
@@ -135,35 +142,41 @@ def evaluate(model, dataset, device, config):
         else:
             x_0 = torch.zeros_like(eval_data["x"]).to(device)
 
-        # Get predictions
-        x_pred = integrate(
-            model=model,
-            x_0=x_0,
-            c=c_eval,
-            n_steps=config.evaluation.num_eval_steps,
-            method=config.evaluation.integration_method,
-            mode=config.experiment.mode,
-        )
+        # Evaluate for each NFE
+        for nfe in num_eval_steps:
+            # Get predictions
+            x_pred = integrate(
+                model=model,
+                x_0=x_0,
+                c=c_eval,
+                n_steps=nfe,
+                method=config.evaluation.integration_method,
+                mode=config.experiment.mode,
+            )
 
-        x_pred = x_pred.cpu().numpy()
+            x_pred = x_pred.cpu().numpy()
 
-    # Compute metrics
-    l1_error = np.mean(np.abs(x_pred - x_true))
-    l2_error = np.sqrt(np.mean((x_pred - x_true) ** 2))
+            # Compute metrics
+            l1_error = np.mean(np.abs(x_pred - x_true))
+            l2_error = np.sqrt(np.mean((x_pred - x_true) ** 2))
 
-    metrics = {
-        "l1_error": l1_error,
-        "l2_error": l2_error,
-    }
+            metrics = {
+                "nfe": nfe,
+                "l1_error": l1_error,
+                "l2_error": l2_error,
+            }
 
-    # Prepare data for plotting
-    plot_data = {
-        "c_values": c_eval.cpu().numpy().flatten(),
-        "true_values": x_true.flatten(),
-        "pred_values": x_pred.flatten(),
-    }
+            # Prepare data for plotting
+            plot_data = {
+                "nfe": nfe,
+                "c_values": c_eval.cpu().numpy().flatten(),
+                "true_values": x_true.flatten(),
+                "pred_values": x_pred.flatten(),
+            }
 
-    return metrics, plot_data
+            results.append((metrics, plot_data))
+
+    return results
 
 
 def main(config_path: str, overrides: dict = None):
@@ -271,22 +284,27 @@ def main(config_path: str, overrides: dict = None):
 
         # Evaluate
         if (epoch + 1) % config.training.eval_interval == 0:
-            metrics, plot_data = evaluate(model, train_dataset, device, config)
-            log_evaluation(metrics, prefix=f"Epoch {epoch + 1}")
+            results = evaluate(model, train_dataset, device, config)
+            
+            # Log all NFE results
+            for metrics, plot_data in results:
+                log_evaluation(metrics, prefix=f"Epoch {epoch + 1}")
 
-            # Log to CSV
-            metrics_logger.log(
-                "evaluation",
-                {
-                    "epoch": epoch + 1,
-                    "l1_error": metrics["l1_error"],
-                    "l2_error": metrics["l2_error"],
-                },
-            )
+                # Log to CSV
+                metrics_logger.log(
+                    "evaluation",
+                    {
+                        "epoch": epoch + 1,
+                        "nfe": metrics["nfe"],
+                        "l1_error": metrics["l1_error"],
+                        "l2_error": metrics["l2_error"],
+                    },
+                )
 
-            # Save best model
-            if metrics["l2_error"] < best_l2_error:
-                best_l2_error = metrics["l2_error"]
+            # Save best model (using first NFE for tracking)
+            first_metrics = results[0][0]
+            if first_metrics["l2_error"] < best_l2_error:
+                best_l2_error = first_metrics["l2_error"]
                 save_checkpoint(
                     model=model,
                     optimizer=optimizer,
@@ -294,7 +312,7 @@ def main(config_path: str, overrides: dict = None):
                     loss=epoch_loss,
                     save_dir=output_dir / "checkpoints",
                     filename="best_model.pt",
-                    additional_info={"metrics": metrics},
+                    additional_info={"metrics": first_metrics},
                 )
 
         # Save periodic checkpoint
@@ -313,8 +331,11 @@ def main(config_path: str, overrides: dict = None):
     logger.info("Final evaluation...")
     logger.info("=" * 80)
 
-    metrics, plot_data = evaluate(model, train_dataset, device, config)
-    log_evaluation(metrics, prefix="Final")
+    results = evaluate(model, train_dataset, device, config)
+    
+    # Log all NFE results
+    for metrics, plot_data in results:
+        log_evaluation(metrics, prefix="Final")
 
     # Create plots
     plots_dir = output_dir / "plots"
@@ -327,25 +348,32 @@ def main(config_path: str, overrides: dict = None):
         title=f"{config.experiment.name} - Training Curves",
     )
 
-    # Predictions
-    plot_predictions(
-        plot_data["c_values"],
-        plot_data["true_values"],
-        plot_data["pred_values"],
-        save_path=plots_dir / "predictions.png",
-        title=f"{config.experiment.name} - Predictions",
-    )
+    # Create plots for each NFE
+    for metrics, plot_data in results:
+        nfe = metrics["nfe"]
+        
+        # Predictions
+        plot_predictions(
+            plot_data["c_values"],
+            plot_data["true_values"],
+            plot_data["pred_values"],
+            save_path=plots_dir / f"predictions_nfe{nfe}.png",
+            title=f"{config.experiment.name} - Predictions",
+            nfe=nfe,
+        )
 
-    # Errors
-    errors = np.abs(plot_data["pred_values"] - plot_data["true_values"])
-    plot_errors(
-        plot_data["c_values"],
-        errors,
-        save_path=plots_dir / "errors.png",
-        title=f"{config.experiment.name} - Prediction Errors",
-    )
+        # Errors
+        errors = np.abs(plot_data["pred_values"] - plot_data["true_values"])
+        plot_errors(
+            plot_data["c_values"],
+            errors,
+            save_path=plots_dir / f"errors_nfe{nfe}.png",
+            title=f"{config.experiment.name} - Prediction Errors",
+            nfe=nfe,
+        )
 
-    # Save final checkpoint
+    # Save final checkpoint (with first NFE metrics)
+    first_metrics = results[0][0]
     save_checkpoint(
         model=model,
         optimizer=optimizer,
@@ -353,7 +381,7 @@ def main(config_path: str, overrides: dict = None):
         loss=train_losses[-1],
         save_dir=output_dir / "checkpoints",
         filename="final_model.pt",
-        additional_info={"metrics": metrics},
+        additional_info={"metrics": first_metrics},
     )
 
     logger.info("Training complete!")
@@ -362,7 +390,7 @@ def main(config_path: str, overrides: dict = None):
     # Close CSV loggers
     metrics_logger.close_all()
 
-    return metrics
+    return first_metrics
 
 
 if __name__ == "__main__":

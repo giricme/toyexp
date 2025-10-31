@@ -195,6 +195,7 @@ def plot_predictions(
     title: str = "Predictions vs Ground Truth",
     xlabel: str = "c",
     ylabel: str = "f(c)",
+    nfe: Optional[int] = None,
 ) -> plt.Figure:
     """
     Plot predictions against ground truth.
@@ -207,6 +208,7 @@ def plot_predictions(
         title: Plot title
         xlabel: X-axis label
         ylabel: Y-axis label
+        nfe: Optional number of function evaluations to include in title
 
     Returns:
         Matplotlib figure object
@@ -218,9 +220,12 @@ def plot_predictions(
     )
     ax.scatter(c_values, pred_values, alpha=0.6, s=20, label="Predictions", color="red")
 
+    # Add NFE to title if provided
+    plot_title = title if nfe is None else f"{title} (NFE={nfe})"
+
     ax.set_xlabel(xlabel, fontsize=12)
     ax.set_ylabel(ylabel, fontsize=12)
-    ax.set_title(title, fontsize=14, fontweight="bold")
+    ax.set_title(plot_title, fontsize=14, fontweight="bold")
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
 
@@ -243,6 +248,7 @@ def plot_errors(
     xlabel: str = "c",
     ylabel: str = "Error",
     error_type: str = "L2",
+    nfe: Optional[int] = None,
 ) -> plt.Figure:
     """
     Plot prediction errors.
@@ -255,6 +261,7 @@ def plot_errors(
         xlabel: X-axis label
         ylabel: Y-axis label
         error_type: Type of error (for legend)
+        nfe: Optional number of function evaluations to include in title
 
     Returns:
         Matplotlib figure object
@@ -274,9 +281,12 @@ def plot_errors(
         label=f"Mean Error: {mean_error:.4f}",
     )
 
+    # Add NFE to title if provided
+    plot_title = title if nfe is None else f"{title} (NFE={nfe})"
+
     ax.set_xlabel(xlabel, fontsize=12)
     ax.set_ylabel(ylabel, fontsize=12)
-    ax.set_title(title, fontsize=14, fontweight="bold")
+    ax.set_title(plot_title, fontsize=14, fontweight="bold")
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
 
@@ -395,7 +405,7 @@ if __name__ == "__main__":
     set_seed(42)
     val2 = torch.rand(3)
     assert torch.allclose(val1, val2), "Seeding failed!"
-    logger.info("âœ“ Seeding works")
+    logger.info("Ã¢Å“â€œ Seeding works")
 
     # Test 2: Checkpoint save/load
     logger.info("\nTest 2: Checkpoint save/load")
@@ -447,7 +457,7 @@ if __name__ == "__main__":
         assert checkpoint["epoch"] == 10
         assert checkpoint["loss"] == 0.123
 
-    logger.info("âœ“ Checkpoint save/load works")
+    logger.info("Ã¢Å“â€œ Checkpoint save/load works")
 
     # Test 3: Plotting functions
     logger.info("\nTest 3: Plotting functions")
@@ -495,8 +505,8 @@ if __name__ == "__main__":
         assert (Path(tmpdir) / "errors.png").exists()
         assert (Path(tmpdir) / "comp.png").exists()
 
-    logger.info("âœ“ Plotting functions work")
+    logger.info("Ã¢Å“â€œ Plotting functions work")
 
     logger.info("\n" + "=" * 60)
-    logger.info("All utility tests passed! âœ“")
+    logger.info("All utility tests passed! Ã¢Å“â€œ")
     logger.info("=" * 60)

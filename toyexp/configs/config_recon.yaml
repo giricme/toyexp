@@ -57,7 +57,7 @@ training:
 
 # Evaluation configuration
 evaluation:
-  num_eval_steps: 1  # For regression, always 1. For flow, can be 10, 50, 100, etc.
+  num_eval_steps: [1, 9]  # ODE integration steps (for flow mode)
   integration_method: "euler"  # or "rk4"
   # Initial distribution for flow
   initial_dist: "zeros"  # 'zeros' or 'gaussian'
