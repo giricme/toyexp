@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 import yaml
 
@@ -33,7 +34,7 @@ EXPERIMENT_CONFIGS = {
         "module": "toyexp.scripts.train_proj",
         "modes": ["regression", "flow", "mip"],
         "loss_types": ["l1", "l2"],
-        "metrics": ["L1", "L2", "Subspace Diag", "Subspace Off-Diag", "Boundary"],
+        "metrics": ["L1", "L2"],
     },
     "lie": {
         "module": "toyexp.scripts.train_lie",
@@ -110,6 +111,7 @@ def run_training(module_name: str, config_path: str, mode: str, loss_type: str, 
 def load_results(output_dir: Path, mode: str, loss_type: str, logger):
     """
     Load results from a completed training run.
+    For flow matching, loads metrics for each NFE value separately.
     
     Args:
         output_dir: Base output directory
@@ -118,28 +120,67 @@ def load_results(output_dir: Path, mode: str, loss_type: str, logger):
         logger: Logger instance
         
     Returns:
-        dict: Metrics from best checkpoint, or None if not found
+        dict or list: For regression/mip: single dict of metrics
+                     For flow: list of dicts, one per NFE value
     """
-    # Results are saved in: output_dir / mode / loss_type / checkpoints / best_model.pt
-    results_path = output_dir / mode / loss_type / "checkpoints" / "final_model.pt"
+    # For flow matching, read from evaluation.csv to get all NFE values
+    if mode == "flow":
+        csv_path = output_dir / mode / loss_type / "evaluation.csv"
+        
+        if not csv_path.exists():
+            logger.warning(f"Evaluation CSV not found: {csv_path}")
+            return None
+        
+        try:
+            df = pd.read_csv(csv_path)
+            
+            # Get unique NFE values
+            if 'nfe' not in df.columns:
+                logger.warning(f"No 'nfe' column in {csv_path}")
+                return None
+            
+            nfe_values = sorted(df['nfe'].unique())
+            results = []
+            
+            for nfe in nfe_values:
+                nfe_df = df[df['nfe'] == nfe]
+                # Get the last (final) evaluation for this NFE
+                last_row = nfe_df.iloc[-1]
+                metrics = last_row.to_dict()
+                metrics['nfe'] = int(nfe)
+                results.append(metrics)
+                
+                logger.info(f"Loaded flow results (NFE={nfe}) from {csv_path}")
+                logger.info(f"  L1: {metrics.get('l1_error', np.nan):.6f}")
+                logger.info(f"  L2: {metrics.get('l2_error', np.nan):.6f}")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Failed to load flow results from {csv_path}: {e}")
+            return None
     
-    if not results_path.exists():
-        logger.warning(f"Results not found: {results_path}")
-        return None
-    
-    try:
-        checkpoint = torch.load(results_path, map_location="cpu", weights_only=False)
-        metrics = checkpoint.get("metrics", {})
+    # For regression/mip, use checkpoint (single NFE or no NFE concept)
+    else:
+        results_path = output_dir / mode / loss_type / "checkpoints" / "final_model.pt"
         
-        logger.info(f"Loaded results from {results_path}")
-        logger.info(f"  L1: {metrics.get('l1_error', np.nan):.6f}")
-        logger.info(f"  L2: {metrics.get('l2_error', np.nan):.6f}")
+        if not results_path.exists():
+            logger.warning(f"Results not found: {results_path}")
+            return None
         
-        return metrics
-        
-    except Exception as e:
-        logger.error(f"Failed to load results from {results_path}: {e}")
-        return None
+        try:
+            checkpoint = torch.load(results_path, map_location="cpu", weights_only=False)
+            metrics = checkpoint.get("metrics", {})
+            
+            logger.info(f"Loaded results from {results_path}")
+            logger.info(f"  L1: {metrics.get('l1_error', np.nan):.6f}")
+            logger.info(f"  L2: {metrics.get('l2_error', np.nan):.6f}")
+            
+            return metrics
+            
+        except Exception as e:
+            logger.error(f"Failed to load results from {results_path}: {e}")
+            return None
 
 
 def generate_latex_table(
@@ -150,9 +191,10 @@ def generate_latex_table(
 ):
     """
     Generate LaTeX table comparing results across modes and loss types.
+    For flow matching, creates separate rows for each NFE value.
     
     Args:
-        results: Dict mapping (mode, loss_type) -> metrics
+        results: Dict mapping (mode, loss_type) -> metrics or list of metrics (for flow)
         experiment_type: Type of experiment (recon/proj/lie)
         save_path: Where to save the LaTeX table
         logger: Logger instance
@@ -185,19 +227,55 @@ def generate_latex_table(
             
             if key not in results or results[key] is None:
                 # Missing results - fill with dashes
+                mode_name = mode
                 values = ["---"] * len(metric_names)
+                row = f"{mode_name} & {loss_type} & " + " & ".join(values) + " \\\\"
+                lines.append(row)
+                lines.append("\\hline")
+            
+            elif mode == "flow" and isinstance(results[key], list):
+                # Flow matching: create separate row for each NFE
+                for metrics in results[key]:
+                    nfe = metrics.get('nfe', 'unknown')
+                    mode_name = f"flow (NFE={nfe})"
+                    values = []
+                    
+                    # Extract metrics based on experiment type
+                    if experiment_type == "recon":
+                        values.append(f"{metrics.get('l1_error', np.nan):.6f}")
+                        values.append(f"{metrics.get('l2_error', np.nan):.6f}")
+                        
+                    elif experiment_type == "proj":
+                        values.append(f"{metrics.get('l1_error', np.nan):.6f}")
+                        values.append(f"{metrics.get('l2_error', np.nan):.6f}")
+                        values.append(f"{metrics.get('subspace_diagonal_mean_4', np.nan):.6f}")
+                        values.append(f"{metrics.get('subspace_off_diagonal_mean_4', np.nan):.6f}")
+                        values.append(f"{metrics.get('boundary_mean_2', np.nan):.6f}")
+                        
+                    elif experiment_type == "lie":
+                        values.append(f"{metrics.get('l1_error', np.nan):.6f}")
+                        values.append(f"{metrics.get('l2_error', np.nan):.6f}")
+                        values.append(f"{metrics.get('avg_cos_similarity', np.nan):.6f}")
+                        values.append(f"{metrics.get('min_cos_similarity', np.nan):.6f}")
+                        values.append(f"{metrics.get('avg_perp_error', np.nan):.6f}")
+                        values.append(f"{metrics.get('max_perp_error', np.nan):.6f}")
+                    
+                    # Format row
+                    row = f"{mode_name} & {loss_type} & " + " & ".join(values) + " \\\\"
+                    lines.append(row)
+                    lines.append("\\hline")
+            
             else:
+                # Regression/MIP: single row
                 metrics = results[key]
                 values = []
                 
-                # Extract metrics based on experiment type
+                # Extract metrics based on experiment type  
                 if experiment_type == "recon":
-                    # Simple: L1, L2
                     values.append(f"{metrics.get('l1_error', np.nan):.6f}")
                     values.append(f"{metrics.get('l2_error', np.nan):.6f}")
-                
+                    
                 elif experiment_type == "proj":
-                    # Projection: L1, L2, Subspace metrics
                     values.append(f"{metrics.get('l1_error', np.nan):.6f}")
                     values.append(f"{metrics.get('l2_error', np.nan):.6f}")
                     values.append(f"{metrics.get('subspace_diagonal_mean_4', np.nan):.6f}")
@@ -205,18 +283,17 @@ def generate_latex_table(
                     values.append(f"{metrics.get('boundary_mean_2', np.nan):.6f}")
                     
                 elif experiment_type == "lie":
-                    # Complex: L1, L2, Avg Cos Sim, Min Cos Sim, Avg Perp Error, Max Perp Error
                     values.append(f"{metrics.get('l1_error', np.nan):.6f}")
                     values.append(f"{metrics.get('l2_error', np.nan):.6f}")
                     values.append(f"{metrics.get('avg_cos_similarity', np.nan):.6f}")
                     values.append(f"{metrics.get('min_cos_similarity', np.nan):.6f}")
                     values.append(f"{metrics.get('avg_perp_error', np.nan):.6f}")
                     values.append(f"{metrics.get('max_perp_error', np.nan):.6f}")
-            
-            # Format row
-            row = f"{mode} & {loss_type} & " + " & ".join(values) + " \\\\"
-            lines.append(row)
-            lines.append("\\hline")
+                
+                # Format row
+                row = f"{mode} & {loss_type} & " + " & ".join(values) + " \\\\"
+                lines.append(row)
+                lines.append("\\hline")
     
     # Close table
     lines.append("\\end{tabular}")
