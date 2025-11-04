@@ -33,7 +33,7 @@ EXPERIMENT_CONFIGS = {
         "module": "toyexp.scripts.train_proj",
         "modes": ["regression", "flow", "mip"],
         "loss_types": ["l1", "l2"],
-        "metrics": ["L1", "L2"],
+        "metrics": ["L1", "L2", "Subspace Diag", "Subspace Off-Diag", "Boundary"],
     },
     "lie": {
         "module": "toyexp.scripts.train_lie",
@@ -96,11 +96,11 @@ def run_training(module_name: str, config_path: str, mode: str, loss_type: str, 
         # Call the main function with overrides
         train_module.main(config_path, overrides)
         
-        logger.info(f"✓ Training completed successfully: mode={mode}, loss_type={loss_type}")
+        logger.info(f"âœ“ Training completed successfully: mode={mode}, loss_type={loss_type}")
         return True
         
     except Exception as e:
-        logger.error(f"✗ Training failed: mode={mode}, loss_type={loss_type}")
+        logger.error(f"âœ— Training failed: mode={mode}, loss_type={loss_type}")
         logger.error(f"Error: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
@@ -191,10 +191,18 @@ def generate_latex_table(
                 values = []
                 
                 # Extract metrics based on experiment type
-                if experiment_type in ["recon", "proj"]:
+                if experiment_type == "recon":
                     # Simple: L1, L2
                     values.append(f"{metrics.get('l1_error', np.nan):.6f}")
                     values.append(f"{metrics.get('l2_error', np.nan):.6f}")
+                
+                elif experiment_type == "proj":
+                    # Projection: L1, L2, Subspace metrics
+                    values.append(f"{metrics.get('l1_error', np.nan):.6f}")
+                    values.append(f"{metrics.get('l2_error', np.nan):.6f}")
+                    values.append(f"{metrics.get('subspace_diagonal_mean_4', np.nan):.6f}")
+                    values.append(f"{metrics.get('subspace_off_diagonal_mean_4', np.nan):.6f}")
+                    values.append(f"{metrics.get('boundary_mean_2', np.nan):.6f}")
                     
                 elif experiment_type == "lie":
                     # Complex: L1, L2, Avg Cos Sim, Min Cos Sim, Avg Perp Error, Max Perp Error
