@@ -34,7 +34,7 @@ EXPERIMENT_CONFIGS = {
         "module": "toyexp.scripts.train_proj",
         "modes": ["regression", "flow", "mip"],
         "loss_types": ["l1", "l2"],
-        "metrics": ["L1", "L2"],
+        "metrics": ["L1", "L2", "Subspace Diag", "Subspace Off-Diag", "Boundary"],
     },
     "lie": {
         "module": "toyexp.scripts.train_lie",

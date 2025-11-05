@@ -159,8 +159,8 @@ def evaluate_subspace_metric(
     4. ||(I - P_j) (f_hat - f_true)|| / ||f_hat - f_true||
 
     Expected pattern:
-    - Diagonal (i=j): LOW values Ã¢â€ â€™ predictions stay in correct subspace
-    - Off-diagonal (iÃ¢â€°Â j): HIGH values Ã¢â€ â€™ predictions orthogonal to wrong subspaces
+    - Diagonal (i=j): LOW values ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ predictions stay in correct subspace
+    - Off-diagonal (iÃƒÂ¢Ã¢â‚¬Â°Ã‚Â j): HIGH values ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ predictions orthogonal to wrong subspaces
 
     Args:
         model: Trained model
@@ -302,7 +302,7 @@ def evaluate_subspace_metric_adjacent(
     Evaluate subspace metrics at boundary regions between adjacent intervals.
 
     For each boundary point c_i (i=1 to 9), tests points in [c_i - width, c_i + width]
-    against combined projection subspace P_{i-1} Ã¢Ë†Âª P_i.
+    against combined projection subspace P_{i-1} ÃƒÂ¢Ã‹â€ Ã‚Âª P_i.
 
     Measures whether the model creates smooth transitions or "jumps" between subspaces.
 
@@ -462,7 +462,7 @@ def plot_subspace_analysis(
     """
     Plot subspace complement analysis as heatmaps for all 4 metrics.
 
-    Creates a grid of heatmaps showing the 10Ãƒâ€”10 matrices for each metric.
+    Creates a grid of heatmaps showing the 10ÃƒÆ’Ã¢â‚¬â€10 matrices for each metric.
 
     Args:
         subspace_results: Dictionary from evaluate_subspace_metric()
@@ -556,7 +556,7 @@ def plot_boundary_analysis(
     """
     Plot boundary subspace analysis for a specific metric.
 
-    Creates a 10Ãƒâ€”10 matrix visualization where only the off-diagonal (boundary)
+    Creates a 10ÃƒÆ’Ã¢â‚¬â€10 matrix visualization where only the off-diagonal (boundary)
     positions are filled, showing the boundary metrics.
 
     Args:
@@ -581,7 +581,7 @@ def plot_boundary_analysis(
         4: r"$\frac{\|(I - P)(\hat{f} - f_{\mathrm{true}})\|}{\|\hat{f} - f_{\mathrm{true}}\|}$",
     }
 
-    # Create 10Ãƒâ€”10 matrix with NaN for non-boundary positions
+    # Create 10ÃƒÆ’Ã¢â‚¬â€10 matrix with NaN for non-boundary positions
     num_intervals = 10
     boundary_matrix = np.full((num_intervals, num_intervals), np.nan)
 
@@ -1111,16 +1111,19 @@ def main(config_path: str, overrides: dict = None):
                 }
                 log_evaluation(metrics_for_logging, prefix=f"Epoch {epoch + 1}")
 
-                # Log to CSV
-                metrics_logger.log(
-                    "evaluation",
-                    {
-                        "epoch": epoch + 1,
-                        "nfe": metrics["nfe"],
-                        "l1_error": metrics["l1_error"],
-                        "l2_error": metrics["l2_error"],
-                    },
-                )
+                # Log to CSV (include all metrics except internal ones starting with _)
+                csv_metrics = {
+                    "epoch": epoch + 1,
+                    "nfe": metrics["nfe"],
+                    "l1_error": metrics["l1_error"],
+                    "l2_error": metrics["l2_error"],
+                }
+                # Add subspace metrics if present
+                for key in ["subspace_diagonal_mean_4", "subspace_off_diagonal_mean_4", "boundary_mean_2"]:
+                    if key in metrics:
+                        csv_metrics[key] = metrics[key]
+                
+                metrics_logger.log("evaluation", csv_metrics)
 
             # Save best model (using first NFE for tracking)
             first_metrics = results[0][0]
