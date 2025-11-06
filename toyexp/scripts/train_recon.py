@@ -152,6 +152,7 @@ def evaluate(model, dataset, device, config):
                 n_steps=nfe,
                 method=config.evaluation.integration_method,
                 mode=config.experiment.mode,
+                mip_t_star=config.training.get("mip_t_star", 0.9),
             )
 
             x_pred = x_pred.cpu().numpy()
@@ -189,9 +190,15 @@ def main(config_path: str, overrides: dict = None):
 
     validate_config(config)
 
-    # Build output directory with subdirectories for mode and loss_type
+    # Build output directory with subdirectories for mode, loss_type, architecture, and seed
     base_output_dir = Path(config.experiment.output_dir)
-    output_dir = base_output_dir / config.experiment.mode / config.training.loss_type
+    output_dir = (
+        base_output_dir
+        / config.experiment.mode
+        / config.training.loss_type
+        / config.network.architecture
+        / f"seed_{config.experiment.seed}"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Setup logging

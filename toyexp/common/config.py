@@ -296,7 +296,7 @@ def validate_config(config: Config) -> None:
     # Validate experiment section
     if "mode" not in config.experiment:
         raise ValueError("Missing experiment.mode")
-    if config.experiment.mode not in ["regression", "flow", "mip"]:
+    if config.experiment.mode not in ["regression", "flow", "mip", "mip_one_step_integrate"]:
         raise ValueError(f"Invalid mode: {config.experiment.mode}")
 
     # Validate dataset section

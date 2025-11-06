@@ -159,8 +159,8 @@ def evaluate_subspace_metric(
     4. ||(I - P_j) (f_hat - f_true)|| / ||f_hat - f_true||
 
     Expected pattern:
-    - Diagonal (i=j): LOW values Ã¢â€ â€™ predictions stay in correct subspace
-    - Off-diagonal (iÃ¢â€°Â j): HIGH values Ã¢â€ â€™ predictions orthogonal to wrong subspaces
+    - Diagonal (i=j): LOW values ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ predictions stay in correct subspace
+    - Off-diagonal (iÃƒÂ¢Ã¢â‚¬Â°Ã‚Â j): HIGH values ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ predictions orthogonal to wrong subspaces
 
     Args:
         model: Trained model
@@ -214,6 +214,7 @@ def evaluate_subspace_metric(
                 n_steps=nfe,
                 method=config.evaluation.integration_method,
                 mode=config.experiment.mode,
+                mip_t_star=config.training.get("mip_t_star", 0.9),
             )
             f_hat_np = f_hat.cpu().numpy()
 
@@ -302,7 +303,7 @@ def evaluate_subspace_metric_adjacent(
     Evaluate subspace metrics at boundary regions between adjacent intervals.
 
     For each boundary point c_i (i=1 to 9), tests points in [c_i - width, c_i + width]
-    against combined projection subspace P_{i-1} Ã¢Ë†Âª P_i.
+    against combined projection subspace P_{i-1} ÃƒÂ¢Ã‹â€ Ã‚Âª P_i.
 
     Measures whether the model creates smooth transitions or "jumps" between subspaces.
 
@@ -366,6 +367,7 @@ def evaluate_subspace_metric_adjacent(
                 n_steps=nfe,
                 method=config.evaluation.integration_method,
                 mode=config.experiment.mode,
+                mip_t_star=config.training.get("mip_t_star", 0.9),
             )
             f_hat_np = f_hat.cpu().numpy()
 
@@ -462,7 +464,7 @@ def plot_subspace_analysis(
     """
     Plot subspace complement analysis as heatmaps for all 4 metrics.
 
-    Creates a grid of heatmaps showing the 10Ãƒâ€”10 matrices for each metric.
+    Creates a grid of heatmaps showing the 10ÃƒÆ’Ã¢â‚¬â€10 matrices for each metric.
 
     Args:
         subspace_results: Dictionary from evaluate_subspace_metric()
@@ -556,7 +558,7 @@ def plot_boundary_analysis(
     """
     Plot boundary subspace analysis for a specific metric.
 
-    Creates a 10Ãƒâ€”10 matrix visualization where only the off-diagonal (boundary)
+    Creates a 10ÃƒÆ’Ã¢â‚¬â€10 matrix visualization where only the off-diagonal (boundary)
     positions are filled, showing the boundary metrics.
 
     Args:
@@ -581,7 +583,7 @@ def plot_boundary_analysis(
         4: r"$\frac{\|(I - P)(\hat{f} - f_{\mathrm{true}})\|}{\|\hat{f} - f_{\mathrm{true}}\|}$",
     }
 
-    # Create 10Ãƒâ€”10 matrix with NaN for non-boundary positions
+    # Create 10ÃƒÆ’Ã¢â‚¬â€10 matrix with NaN for non-boundary positions
     num_intervals = 10
     boundary_matrix = np.full((num_intervals, num_intervals), np.nan)
 
@@ -916,6 +918,7 @@ def evaluate(model, dataset, device, config):
                 n_steps=nfe,
                 method=config.evaluation.integration_method,
                 mode=config.experiment.mode,
+                mip_t_star=config.training.get("mip_t_star", 0.9),
             )
 
             x_pred = x_pred.cpu().numpy()
@@ -1006,9 +1009,15 @@ def main(config_path: str, overrides: dict = None):
 
     validate_config(config)
 
-    # Build output directory with subdirectories for mode and loss_type
+    # Build output directory with subdirectories for mode, loss_type, architecture, and seed
     base_output_dir = Path(config.experiment.output_dir)
-    output_dir = base_output_dir / config.experiment.mode / config.training.loss_type
+    output_dir = (
+        base_output_dir
+        / config.experiment.mode
+        / config.training.loss_type
+        / config.network.architecture
+        / f"seed_{config.experiment.seed}"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Setup logging

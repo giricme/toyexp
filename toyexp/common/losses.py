@@ -49,6 +49,7 @@ def flow_matching_loss(
     x_1: torch.Tensor,
     c: torch.Tensor,
     t: torch.Tensor,
+    loss_type: str = "l2",
 ) -> torch.Tensor:
     """
     Flow matching loss for training velocity field models.
@@ -59,7 +60,7 @@ def flow_matching_loss(
     For linear interpolation: x_t = (1-t)*x_0 + t*x_1
     The target velocity is: v_true = x_1 - x_0
 
-    Loss: ||v_pred - v_true||^2
+    Loss: ||v_pred - v_true||^2 or ||v_pred - v_true||
 
     Args:
         model: Model that predicts velocity v(x_t, c, t)
@@ -67,6 +68,7 @@ def flow_matching_loss(
         x_1: [batch, dim] target state (target function values)
         c: [batch, c_dim] conditioning variable
         t: [batch, 1] time values in [0, 1]
+        loss_type: 'l1' or 'l2'
 
     Returns:
         scalar loss
@@ -80,8 +82,13 @@ def flow_matching_loss(
     # Predict velocity
     v_pred = model(x_t, c, t)
 
-    # MSE loss
-    return l2_loss(v_pred, v_true)
+    # Compute loss
+    if loss_type == "l1":
+        return l1_loss(v_pred, v_true)
+    elif loss_type == "l2":
+        return l2_loss(v_pred, v_true)
+    else:
+        raise ValueError(f"Unknown loss_type: {loss_type}. Choose 'l1' or 'l2'")
 
 
 def regression_loss(
@@ -131,6 +138,7 @@ def mip_loss(
     x_1: torch.Tensor,
     c: torch.Tensor,
     t_star: float = 0.9,
+    loss_type: str = "l2",
 ) -> torch.Tensor:
     """
     Marginal likelihood-Informed Prediction (MIP) loss.
@@ -140,7 +148,7 @@ def mip_loss(
     2. Denoising at t=t*: model predicts x_1 from interpolated state x_t*
 
     Following the paper formulation:
-    L_MIP = E[||f(0, c, 0) - x_1||^2 + ||f(x_t*, c, t*) - x_1||^2]
+    L_MIP = E[||f(0, c, 0) - x_1|| + ||f(x_t*, c, t*) - x_1||]
 
     where x_t* = (1-t*)x_0 + t*x_1
 
@@ -150,6 +158,7 @@ def mip_loss(
         x_1: [batch, dim] target state
         c: [batch, c_dim] conditioning variable
         t_star: Fixed time point for denoising term (default 0.9)
+        loss_type: 'l1' or 'l2'
 
     Returns:
         scalar loss (sum of regression and denoising terms)
@@ -160,16 +169,24 @@ def mip_loss(
     # Term 1: Regression from zeros at t=0
     t_zero = torch.zeros(batch_size, 1, device=device)
     pred_from_zero = model(x_0, c, t_zero)
-    regression_loss = l2_loss(pred_from_zero, x_1)
-
+    
     # Term 2: Denoising at t=t*
     t_star_tensor = torch.full((batch_size, 1), t_star, device=device)
     x_t_star = (1 - t_star) * x_0 + t_star * x_1
     pred_from_noisy = model(x_t_star, c, t_star_tensor)
-    denoising_loss = l2_loss(pred_from_noisy, x_1)
+
+    # Compute losses based on loss_type
+    if loss_type == "l1":
+        regression_loss_val = l1_loss(pred_from_zero, x_1)
+        denoising_loss_val = l1_loss(pred_from_noisy, x_1)
+    elif loss_type == "l2":
+        regression_loss_val = l2_loss(pred_from_zero, x_1)
+        denoising_loss_val = l2_loss(pred_from_noisy, x_1)
+    else:
+        raise ValueError(f"Unknown loss_type: {loss_type}. Choose 'l1' or 'l2'")
 
     # Total MIP loss (sum of both terms)
-    return regression_loss + denoising_loss
+    return regression_loss_val + denoising_loss_val
 
 
 class LossManager:
@@ -183,7 +200,7 @@ class LossManager:
 
     Args:
         mode: 'regression', 'flow', or 'mip'
-        loss_type: For regression: 'l1' or 'l2'. For flow/mip: always uses l2.
+        loss_type: 'l1' or 'l2' (applies to all modes)
         x_dim: Dimension of x (for creating zero placeholders in regression)
         loss_aggregation: 'full' or 'per_component' (for Lie datasets)
         num_components: Number of components K (required if loss_aggregation='per_component')
@@ -192,14 +209,15 @@ class LossManager:
 
     Usage:
         # Standard usage (full aggregation)
-        loss_manager = LossManager(mode='flow', x_dim=8)
+        loss_manager = LossManager(mode='flow', loss_type='l2', x_dim=8)
 
         # MIP mode with custom t*
-        loss_manager = LossManager(mode='mip', x_dim=8, mip_t_star=0.9)
+        loss_manager = LossManager(mode='mip', loss_type='l1', x_dim=8, mip_t_star=0.9)
 
         # Per-component aggregation for Lie datasets
         loss_manager = LossManager(
             mode='flow',
+            loss_type='l2',
             x_dim=6,  # K=3, dim=2, so output is 3*2=6
             loss_aggregation='per_component',
             num_components=3,
@@ -228,6 +246,11 @@ class LossManager:
         if mode not in ["regression", "flow", "mip"]:
             raise ValueError(
                 f"Unknown mode: {mode}. Choose 'regression', 'flow', or 'mip'"
+            )
+
+        if loss_type not in ["l1", "l2"]:
+            raise ValueError(
+                f"Unknown loss_type: {loss_type}. Choose 'l1' or 'l2'"
             )
 
         if mode == "regression" and x_dim is None:
@@ -306,7 +329,7 @@ class LossManager:
             x_0, x_1, c, t = args
 
             if self.loss_aggregation == "full":
-                return flow_matching_loss(model, x_0, x_1, c, t)
+                return flow_matching_loss(model, x_0, x_1, c, t, self.loss_type)
             else:  # per_component
                 return self._per_component_flow_loss(model, x_0, x_1, c, t)
 
@@ -318,7 +341,7 @@ class LossManager:
             x_0, x_1, c = args
 
             if self.loss_aggregation == "full":
-                return mip_loss(model, x_0, x_1, c, self.mip_t_star)
+                return mip_loss(model, x_0, x_1, c, self.mip_t_star, self.loss_type)
             else:  # per_component
                 return self._per_component_mip_loss(model, x_0, x_1, c)
 
@@ -403,7 +426,13 @@ class LossManager:
             v_pred_k = v_pred[:, k, :]  # [batch, dim]
             v_true_k = v_true[:, k, :]  # [batch, dim]
 
-            loss_k = l2_loss(v_pred_k, v_true_k)
+            if self.loss_type == "l1":
+                loss_k = l1_loss(v_pred_k, v_true_k)
+            elif self.loss_type == "l2":
+                loss_k = l2_loss(v_pred_k, v_true_k)
+            else:
+                raise ValueError(f"Unknown loss_type: {self.loss_type}")
+            
             component_losses.append(loss_k)
 
         # Sum losses across components
@@ -455,10 +484,16 @@ class LossManager:
             target_k = x_1_reshaped[:, k, :]  # [batch, dim]
 
             # MIP loss = regression term + denoising term
-            regression_loss_k = l2_loss(pred_zero_k, target_k)
-            denoising_loss_k = l2_loss(pred_noisy_k, target_k)
+            if self.loss_type == "l1":
+                regression_loss_k = l1_loss(pred_zero_k, target_k)
+                denoising_loss_k = l1_loss(pred_noisy_k, target_k)
+            elif self.loss_type == "l2":
+                regression_loss_k = l2_loss(pred_zero_k, target_k)
+                denoising_loss_k = l2_loss(pred_noisy_k, target_k)
+            else:
+                raise ValueError(f"Unknown loss_type: {self.loss_type}")
+            
             loss_k = regression_loss_k + denoising_loss_k
-
             component_losses.append(loss_k)
 
         # Sum losses across components
@@ -494,7 +529,7 @@ if __name__ == "__main__":
     loss_l2 = l2_loss(pred, target)
     logger.info(f"L1 loss: {loss_l1.item():.6f}")
     logger.info(f"L2 loss: {loss_l2.item():.6f}")
-    logger.info("Ã¢Å“â€œ Basic losses work")
+    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Basic losses work")
 
     # Test flow matching loss
     logger.info("\n=== Test 2: Flow matching loss ===")
@@ -511,7 +546,7 @@ if __name__ == "__main__":
 
     loss_flow = flow_matching_loss(model, x_0, x_1, c, t)
     logger.info(f"Flow matching loss: {loss_flow.item():.6f}")
-    logger.info("Ã¢Å“â€œ Flow matching loss works")
+    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Flow matching loss works")
 
     # Test regression loss
     logger.info("\n=== Test 3: Regression loss ===")
@@ -530,7 +565,7 @@ if __name__ == "__main__":
     loss_reg_l2 = regression_loss(model_reg, c, target, x_dim=dim, loss_type="l2")
     logger.info(f"Regression L1 loss: {loss_reg_l1.item():.6f}")
     logger.info(f"Regression L2 loss: {loss_reg_l2.item():.6f}")
-    logger.info("Ã¢Å“â€œ Regression losses work")
+    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Regression losses work")
 
     # Test LossManager (regression mode)
     logger.info("\n=== Test 4: LossManager (regression mode) ===")
@@ -538,7 +573,7 @@ if __name__ == "__main__":
     loss_managed = loss_manager_reg.compute_loss(model_reg, c, target)
     logger.info(f"LossManager (regression): {loss_managed.item():.6f}")
     logger.info(f"Matches direct call: {torch.allclose(loss_managed, loss_reg_l2)}")
-    logger.info("Ã¢Å“â€œ LossManager works in regression mode")
+    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ LossManager works in regression mode")
 
     # Test LossManager (flow mode)
     logger.info("\n=== Test 5: LossManager (flow mode) ===")
@@ -546,7 +581,7 @@ if __name__ == "__main__":
     loss_managed_flow = loss_manager_flow.compute_loss(model, x_0, x_1, c, t)
     logger.info(f"LossManager (flow): {loss_managed_flow.item():.6f}")
     logger.info(f"Matches direct call: {torch.allclose(loss_managed_flow, loss_flow)}")
-    logger.info("Ã¢Å“â€œ LossManager works in flow mode")
+    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ LossManager works in flow mode")
 
     # Test gradient flow
     logger.info("\n=== Test 6: Gradient flow ===")
@@ -562,8 +597,8 @@ if __name__ == "__main__":
     loss_after = flow_matching_loss(model, x_0, x_1, c, t)
     logger.info(f"Loss after 1 step: {loss_after.item():.6f}")
     logger.info(f"Loss changed: {loss_after.item() != loss.item()}")
-    logger.info("Ã¢Å“â€œ Gradients flow correctly")
+    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Gradients flow correctly")
 
     logger.info("\n" + "=" * 60)
-    logger.info("All loss tests passed! Ã¢Å“â€œ")
+    logger.info("All loss tests passed! ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“")
     logger.info("=" * 60)

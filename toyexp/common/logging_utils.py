@@ -368,180 +368,22 @@ def create_metrics_logger(
                 "perp_error",
             ],
         )
-    else:  # recon, proj
+    elif experiment_type == "proj":
+        # Projection experiment includes subspace metrics
+        ml.add_logger(
+            "evaluation",
+            [
+                "epoch",
+                "nfe",
+                "l1_error",
+                "l2_error",
+                "subspace_diagonal_mean_4",
+                "subspace_off_diagonal_mean_4",
+                "boundary_mean_2",
+            ],
+        )
+    else:  # recon
         ml.add_logger("evaluation", ["epoch", "nfe", "l1_error", "l2_error"])
 
     return ml
 
-
-if __name__ == "__main__":
-    logger = logging.getLogger(__name__)
-    logger.info("Testing logging utilities...\n")
-
-    # Test 1: Basic logger setup
-    logger.info("=" * 60)
-    logger.info("Test 1: Basic logger setup")
-    logger.info("=" * 60)
-
-    logger = setup_logger("test_logger", level=logging.INFO)
-
-    logger.debug("This DEBUG message should not appear")
-    logger.info("This INFO message should appear")
-    logger.warning("This WARNING message should appear")
-    logger.error("This ERROR message should appear")
-
-    logger.info(
-        "\nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Basic logging works\n"
-    )
-
-    # Test 2: Get logger
-    logger.info("=" * 60)
-    logger.info("Test 2: Get existing logger")
-    logger.info("=" * 60)
-
-    logger2 = get_logger("test_logger")
-    logger2.info("Same logger instance retrieved")
-
-    logger.info(
-        "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ get_logger() works\n"
-    )
-
-    # Test 3: File logging
-    logger.info("=" * 60)
-    logger.info("Test 3: File logging")
-    logger.info("=" * 60)
-
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
-        log_file = f.name
-
-    file_logger = setup_logger("file_logger", log_file=log_file)
-    file_logger.info("This message goes to file and console")
-
-    with open(log_file, "r") as f:
-        content = f.read()
-        logger.info(f"Log file contains {len(content)} characters")
-
-    import os
-
-    os.unlink(log_file)
-
-    logger.info(
-        "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ File logging works\n"
-    )
-
-    # Test 4: Change log level
-    logger.info("=" * 60)
-    logger.info("Test 4: Change log level")
-    logger.info("=" * 60)
-
-    test_logger = setup_logger("level_test", level=logging.INFO)
-    test_logger.debug("This should NOT appear (level=INFO)")
-
-    set_log_level(logging.DEBUG, "level_test")
-    test_logger.debug("This SHOULD appear (level=DEBUG)")
-
-    logger.info(
-        "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Log level changes work\n"
-    )
-
-    # Test 5: Logger context
-    logger.info("=" * 60)
-    logger.info("Test 5: Logger context (temporary level change)")
-    logger.info("=" * 60)
-
-    ctx_logger = setup_logger("context_test", level=logging.INFO)
-    ctx_logger.debug("1. This should NOT appear (INFO level)")
-
-    with LoggerContext(logging.DEBUG, "context_test"):
-        ctx_logger.debug("2. This SHOULD appear (DEBUG temporarily)")
-
-    ctx_logger.debug("3. This should NOT appear again (back to INFO)")
-
-    logger.info(
-        "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Logger context works\n"
-    )
-
-    # Test 6: Log model info
-    logger.info("=" * 60)
-    logger.info("Test 6: Log model info")
-    logger.info("=" * 60)
-
-    import torch.nn as nn
-
-    class SimpleModel(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.fc1 = nn.Linear(10, 20)
-            self.fc2 = nn.Linear(20, 1)
-
-    model = SimpleModel()
-    model_logger = get_logger("model_test")
-    log_model_info(model, model_logger)
-
-    logger.info(
-        "\nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Model info logging works\n"
-    )
-
-    # Test 7: Log training step
-    logger.info("=" * 60)
-    logger.info("Test 7: Log training step")
-    logger.info("=" * 60)
-
-    train_logger = get_logger("train_test")
-    log_training_step(
-        epoch=1,
-        step=100,
-        loss=0.123456,
-        metrics={"lr": 0.001, "grad_norm": 2.5},
-        logger=train_logger,
-    )
-
-    logger.info(
-        "\nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Training step logging works\n"
-    )
-
-    # Test 8: Log evaluation
-    logger.info("=" * 60)
-    logger.info("Test 8: Log evaluation metrics")
-    logger.info("=" * 60)
-
-    eval_logger = get_logger("eval_test")
-    log_evaluation(
-        metrics={
-            "loss": 0.234567,
-            "l1_error": 0.123,
-            "l2_error": 0.456,
-            "n_samples": 1000,
-        },
-        prefix="Test",
-        logger=eval_logger,
-    )
-
-    logger.info(
-        "\nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Evaluation logging works\n"
-    )
-
-    # Test 9: Log config
-    logger.info("=" * 60)
-    logger.info("Test 9: Log configuration")
-    logger.info("=" * 60)
-
-    config_logger = get_logger("config_test")
-    config = {
-        "model": {"architecture": "concat", "hidden_dim": 256, "n_layers": 3},
-        "training": {"lr": 0.001, "batch_size": 32, "epochs": 1000},
-        "seed": 42,
-    }
-    log_config(config, config_logger)
-
-    logger.info(
-        "\nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Config logging works\n"
-    )
-
-    logger.info("=" * 60)
-    logger.info(
-        "All logging tests passed! ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ"
-    )
-    logger.info("=" * 60)

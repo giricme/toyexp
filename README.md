@@ -1,6 +1,6 @@
-# Toy Experiments: Regression vs Flow Models
+# Toy Experiments: Regression vs Flow Matching vs MIP
 
-Comparing regression and flow matching models for function approximation in low-data regimes.
+Comparing regression, flow matching, and manifold interpolation (MIP) models for function approximation in low-data regimes.
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
@@ -8,24 +8,43 @@ Comparing regression and flow matching models for function approximation in low-
 
 ---
 
+## Executive Summary
+
+This project explores **implicit biases** of different training paradigms when learning target functions from limited data:
+
+- **Objective**: Compare three training paradigms (regression, flow matching, MIP) across three tasks (reconstruction, projection, Lie algebra) using identical network architectures trained with L1 and L2 losses.
+
+- **Key Result**: Clear trade-off between reconstruction fidelity and geometric structure preservation:
+  - **Regression-L2** achieves best reconstruction (26× better than flow on recon task)
+  - **MIP-L2** provides best balance (within 1.7× of regression, significantly better geometry)
+  - **Flow matching** struggles with reconstruction but shows geometry potential
+
+- **Recommendation**: Start with regression-L2 for baseline performance. Switch to MIP-L2 when geometric constraints (manifold adherence, subspace structure) are critical.
+
+- **Experimental Setup**: Results averaged over 3 random seeds with 50 training samples and 100,000 evaluation samples per experiment.
+
+---
+
 ## 🎯 Overview
 
-This project explores the **implicit biases** of regression versus flow-based models when learning target functions from limited data. The key research question: *What interpolation behaviors emerge from different training paradigms?*
+### Three Training Paradigms
+
+1. **Regression**: Direct function approximation `f(c)` - optimizes reconstruction error
+2. **Flow Matching**: Learning velocity fields `dx/dt = v(x_t, c, t)` via ODE integration
+3. **MIP (Manifold Interpolation)**: Flow matching + denoising term at fixed time t* for manifold adherence
+
+### Three Experiment Types
+
+1. **Reconstruction**: Learn scalar target functions `f: ℝ → ℝ`
+2. **Projection**: Learn high-dimensional functions constrained to low-dimensional subspaces
+3. **Lie Algebra**: Learn rotation components evolving on SO(2) manifolds
 
 ### Key Features
 
-- **Two Training Paradigms**:
-  - **Regression**: Direct function approximation `f(c)`
-  - **Flow Matching**: Learning velocity fields `dx/dt = v(x_t, c, t)`
-
-- **Two Experiment Types**:
-  - **Reconstruction**: Learn scalar target functions `f: ℝ → ℝ`
-  - **Projection**: Learn high-dimensional functions constrained to low-dimensional subspaces
-
-- **Clean, Modular Codebase**:
-  - Well-tested components
-  - Configuration-driven experiments
-  - Comprehensive logging and visualization
+- **Modular, clean codebase** with configuration-driven experiments
+- **Comprehensive evaluation**: Reconstruction metrics (L1/L2) + geometric metrics (subspace angles, manifold adherence)
+- **Multiple seeds support** for robust statistical analysis
+- **Detailed logging and visualization**
 
 ---
 
@@ -38,18 +57,8 @@ This project explores the **implicit biases** of regression versus flow-based mo
 git clone https://github.com/yourusername/toyexp.git
 cd toyexp
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install package
-pip install -e .
-```
-
-### With Development Tools
-
-```bash
-pip install -e ".[dev]"
+# Install dependencies
+pip install torch numpy matplotlib pyyaml scipy
 ```
 
 ### Requirements
@@ -59,333 +68,436 @@ pip install -e ".[dev]"
 - NumPy 1.24+
 - Matplotlib 3.7+
 - PyYAML 6.0+
+- SciPy 1.10+ (for Lie algebra experiments)
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Run a Quick Test (100 epochs, ~2 minutes)
+### 1. Run Your First Experiment (2 minutes)
 
 ```bash
-python toyexp/train_recon.py --config toyexp/configs/config_test.yaml
+# Regression mode - reconstruction task
+python train_recon.py --config config_recon.yaml --mode regression
+
+# This will:
+# - Train a regression model for 50,000 epochs
+# - Save results to ./outputs/recon/
+# - Create plots and logs automatically
 ```
 
-**Expected output:**
-- Training logs in `./outputs/test/train.log`
-- Checkpoints in `./outputs/test/checkpoints/`
-- Plots in `./outputs/test/plots/`
-
-### 2. Run Full Reconstruction Experiment
+### 2. Check Results
 
 ```bash
-# Regression mode
-python toyexp/train_recon.py \
-    --config toyexp/configs/config_recon.yaml \
-    --mode regression
+# View training log
+cat ./outputs/recon/train.log
 
-# Flow mode
-python toyexp/train_recon.py \
-    --config toyexp/configs/config_recon.yaml \
-    --mode flow
+# Results structure:
+./outputs/recon/
+├── config.yaml              # Configuration used
+├── train.log                # Training logs
+├── evaluation.csv           # Evaluation metrics
+├── checkpoints/
+│   └── final_model.pt       # Final model
+└── plots/
+    ├── training_loss.png    # Loss over time
+    └── predictions.png      # Model predictions vs ground truth
 ```
 
-### 3. Run Projection Experiment
+### 3. Compare Training Paradigms
 
 ```bash
-python toyexp/train_proj.py \
-    --config toyexp/configs/config_proj.yaml \
-    --mode regression
+# Run all three modes
+python train_recon.py --config config_recon.yaml --mode regression
+python train_recon.py --config config_recon.yaml --mode flow
+python train_recon.py --config config_recon.yaml --mode mip
+
+# Compare results
+python run_mode_comparison.py
 ```
 
-### 4. Analyze Results
+### 4. Try Other Experiments
 
 ```bash
-python toyexp/analyze_results.py \
-    --results_dir ./outputs \
-    --output_dir ./analysis
+# Projection experiment (8D → 3D subspace)
+python train_proj.py --config config_proj.yaml --mode mip
+
+# Lie algebra experiment (SO(2) rotations)
+python train_lie.py --config config_lie.yaml --mode mip
 ```
 
 ---
 
-## 📁 Project Structure
-
-```
-toyexp/
-├── toyexp/                      # Main package
-|   ├── common/                    
-│       ├── datasets.py             # Dataset implementations
-│       ├── networks.py             # Neural network architectures
-│       ├── losses.py               # Loss functions
-│       ├── integrate.py            # ODE integration methods
-│       ├── logging_utils.py        # Logging utilities
-│       ├── config.py               # Configuration management
-│       ├── utils.py                # Utility functions
-│       |── analyze_results.py      # Results analysis
-|   ├── scripts/ 
-│       ├── train_recon.py          # Reconstruction training script
-│       ├── train_proj.py           # Projection training script
-│   └── configs/                # Configuration files
-│       ├── config_recon.yaml   # Reconstruction config
-│       ├── config_proj.yaml    # Projection config
-├── pyproject.toml              # Project metadata
-├── README.md                   # This file
-```
-
----
-
-## 🎮 Usage
-
-### Basic Training
-
-```bash
-python toyexp/train_recon.py --config toyexp/configs/config_recon.yaml
-```
-
-### Command-Line Overrides
-
-Override any config parameter using dot notation:
-
-```bash
-python toyexp/train_recon.py \
-    --config toyexp/configs/config_recon.yaml \
-    experiment.mode=flow \
-    training.learning_rate=0.001 \
-    training.num_epochs=10000 \
-    dataset.num_train=100 \
-    network.hidden_dim=512
-```
-
-### Multiple Seeds
-
-```bash
-for seed in 42 43 44 45 46; do
-    python toyexp/train_recon.py \
-        --config toyexp/configs/config_recon.yaml \
-        --mode regression \
-        --seed $seed
-done
-```
-
-### Hyperparameter Search
-
-```bash
-# Try different learning rates
-for lr in 0.001 0.0001 0.00001; do
-    python toyexp/train_recon.py \
-        --config toyexp/configs/config_recon.yaml \
-        training.learning_rate=$lr \
-        experiment.output_dir=./outputs/lr_$lr
-done
-```
-
----
-
-## 🔬 Experiments
+## 📊 Experiments
 
 ### Reconstruction Experiment
 
 **Goal**: Learn scalar target functions `f(c) = Σ wᵢ·sin(freqᵢ·c + phaseᵢ)`
 
 **Setup**:
-- **Input**: Conditioning variable `c ∈ ℝ`
-- **Output**: Scalar value `f(c) ∈ ℝ`
-- **Training data**: 50 samples (low-data regime)
-- **Evaluation**: 1000 samples (dense sampling)
+- Input: `c ∈ [0, 1]`
+- Output: Scalar `f(c) ∈ ℝ`
+- Training: 50 samples
+- Evaluation: 100,000 samples
 
-**Methods**:
-1. **Regression**: Directly predict `f(c)` from `c`
-2. **Flow**: Learn velocity field `v(x_t, c, t)` and integrate
+**Mathematical Formulation**:
+```
+f(c) = Σᵢ₌₁ᴷ wᵢ · trigᵢ(ωᵢc + φᵢ)
+```
+where K=3 components, frequencies ωᵢ are prime-based, weights wᵢ=1 (uniform).
+
+**Key Finding**: Regression-L2 achieves 0.0023 L1 error, 26× better than flow matching.
 
 ### Projection Experiment
 
-**Goal**: Learn high-dimensional functions living in low-dimensional subspaces
+**Goal**: Learn 8D functions living in 3D subspaces with interval-dependent projections
 
 **Setup**:
-- **Input**: Conditioning variable `c ∈ ℝ`
-- **Output**: `g(c) = P @ f(c)` where `P` is rank-deficient projection
-- **Dimensions**: Output in `ℝ^8` constrained to `ℝ^2` subspace
-- **Challenge**: Can models discover the subspace structure?
+- Input: `c ∈ [0, 1]`
+- Output: `g(c) = Pᵢ(c) f(c) ∈ ℝ⁸` constrained to rank-3 subspaces
+- Domain split into 10 intervals, each with unique projection matrix
 
-**Metrics**:
-- L1/L2 reconstruction error
-- Subspace alignment error
-- Explained variance ratio
-
----
-
-## 📊 Datasets
-
-### TargetFunctionDataset
-
-Generates target functions as combinations of sine/cosine terms:
-
-```python
-f(c) = Σ wᵢ · trig_i(freq_i · c + phase_i)
+**Mathematical Formulation**:
+```
+g(c) = Pᵢ(c) f(c)
+where Pᵢ = Aᵢ(Aᵢᵀ Aᵢ)⁻¹ Aᵢᵀ,  Aᵢ ∈ ℝ⁸ˣ³
 ```
 
-**Features**:
-- Prime-based frequencies (no harmonics)
-- Configurable weighting (uniform or inverse-frequency)
-- Reproducible with multiple seed controls
-- Grid or random sampling
+**Metrics**: L1/L2 reconstruction + subspace angles/distances
 
-### ProjectedTargetFunctionDataset
+**Key Finding**: MIP-L2 only 4.7% worse than regression while preserving geometric structure.
 
-Projects high-dimensional functions onto low-dimensional subspaces:
+### Lie Algebra Experiment
 
-```python
-g(c) = P @ f(c)
+**Goal**: Learn rotation components evolving on SO(2) manifolds
+
+**Setup**:
+- Input: `c ∈ [0, 1]`
+- Output: 8 rotation components, each 2D vector
+- High-frequency weight functions modulate rotations
+
+**Mathematical Formulation**:
+```
+fᵢ(α, c) = wᵢ(c) · exp(αᵢc · A) · e₁
+where A = [[0, -1], [1, 0]] (SO(2) generator)
+Output: concat(f₁, ..., f₈) ∈ ℝ¹⁶
 ```
 
-Where `P` is a rank-deficient projection matrix.
+**Metrics**: L1/L2 reconstruction + cosine similarity + perpendicular error
 
-**Features**:
-- Configurable output/subspace dimensions
-- True projection matrix for analysis
-- Subspace alignment metrics
-
----
-
-## 🏗️ Architecture
-
-### Network Architectures
-
-**ConcatMLP**: Concatenation-based conditioning
-```
-[x, c, t] → Linear → ReLU → ... → Linear → output
-```
-
-**FiLMMLP**: Feature-wise Linear Modulation
-```
-x → Linear → FiLM(c, t) → ReLU → ... → output
-```
-
-### Training Modes
-
-**Regression Mode**:
-- Direct prediction: `pred = model(zeros, c)`
-- Loss: `||pred - target||²`
-- Single forward pass
-
-**Flow Mode**:
-- Learns velocity field: `v = model(x_t, c, t)`
-- Loss: `||v - (x_1 - x_0)||²` (flow matching)
-- ODE integration at inference
-
----
-
-## 📈 Results
-
-After training, each experiment produces:
-
-```
-outputs/experiment_name/
-├── config.yaml              # Saved configuration
-├── train.log                # Training logs
-├── checkpoints/             # Model checkpoints
-│   ├── best_model.pt       # Best validation model
-│   ├── final_model.pt      # Final epoch model
-│   └── checkpoint_*.pt     # Periodic checkpoints
-└── plots/                   # Visualizations
-    ├── training_curves.png # Loss curves
-    ├── predictions.png     # Predictions vs truth
-    └── errors.png          # Error distribution
-```
-
-### Analysis
-
-Compare methods across multiple seeds:
-
-```bash
-python toyexp/analyze_results.py --results_dir ./outputs
-```
-
-Produces:
-- Comparison plots with error bars
-- Summary statistics (mean ± std)
-- Subspace analysis (for projection experiments)
+**Key Finding**: MIP-L2 achieves best manifold adherence (0.081 avg perpendicular error vs 0.092 for regression).
 
 ---
 
 ## ⚙️ Configuration
 
-### Config File Structure
+### Basic Config Structure
 
 ```yaml
 experiment:
-  name: "my_experiment"
-  mode: "regression"  # or "flow"
+  name: "recon_experiment"
+  mode: "mip"                    # 'regression', 'flow', or 'mip'
   seed: 42
   device: "cuda"
-  output_dir: "./outputs/my_exp"
+  output_dir: "./outputs/recon"
 
 dataset:
-  num_train: 50
-  num_eval: 1000
-  target_dim: 1
-  condition_dim: 1
-  num_components: 3
-  weight_strategy: "uniform"  # or "inverse_freq"
-  sampling_strategy: "grid"   # or "random"
+  num_train: 50                  # Training samples
+  num_eval: 100000               # Evaluation samples
+  target_dim: 1                  # Output dimension
+  num_components: 3              # Frequency components
+  sampling_strategy: "grid"      # 'grid' or 'random'
 
 network:
-  architecture: "concat"  # or "film"
+  architecture: "concat"         # 'concat' or 'film'
   hidden_dim: 256
   num_layers: 3
   activation: "relu"
 
 training:
+  loss_type: "l2"               # 'l1' or 'l2'
   batch_size: 32
-  num_epochs: 5000
+  num_epochs: 50000
   learning_rate: 0.001
-  log_interval: 100
-  eval_interval: 500
-  save_interval: 1000
-  initial_dist: "zeros"  # or "gaussian"
+  log_interval: 1000
+  eval_interval: 50000
+  
+  # MIP-specific
+  mip_t_star: 0.9               # Fixed time for denoising term
 
 evaluation:
-  num_eval_steps: 1
-  integration_method: "euler"  # or "rk4"
+  num_eval_steps: [1, 9]        # NFE for flow models
+  integration_method: "euler"    # 'euler' or 'rk4'
 ```
 
-### Override Any Parameter
+### Override Config Parameters
 
 ```bash
-python toyexp/train_recon.py --config config.yaml \
-    training.num_epochs=10000 \
-    network.hidden_dim=512 \
-    dataset.num_train=200
+# Change mode and loss
+python train_recon.py --mode flow --loss l1
+
+# Change network architecture
+python train_recon.py --hidden_dim 512 --num_layers 4
+
+# Change output directory
+python train_recon.py --output_dir ./my_results
 ```
 
 ---
 
-## 🧪 Testing
+## 🎮 Usage Examples
 
-### Run Module Tests
-
-```bash
-# Test individual modules
-python toyexp/datasets.py
-python toyexp/networks.py
-python toyexp/losses.py
-python toyexp/integrate.py
-python toyexp/config.py
-python toyexp/utils.py
-```
-
-### Quick Integration Test
+### Compare All Methods on One Task
 
 ```bash
-python toyexp/train_recon.py --config toyexp/configs/config_test.yaml
+# Reconstruction with L2 loss
+for mode in regression flow mip; do
+    python train_recon.py --config config_recon.yaml \
+        --mode $mode \
+        --output_dir ./outputs/recon_${mode}_l2
+done
+
+# Analyze results
+python run_mode_comparison.py
 ```
+
+### Multiple Seeds for Statistical Analysis
+
+```bash
+# Run 3 seeds for each method
+for seed in 0 1 2; do
+    for mode in regression flow mip; do
+        python train_recon.py \
+            --mode $mode \
+            --seed $seed \
+            --output_dir ./outputs/recon_${mode}_seed${seed}
+    done
+done
+
+# Generate averaged results
+python run_mode_comparison.py
+```
+
+### L1 vs L2 Loss Comparison
+
+```bash
+# Train with L1 loss
+python train_recon.py --config config_recon.yaml --loss l1
+
+# Train with L2 loss
+python train_recon.py --config config_recon.yaml --loss l2
+```
+
+### Quick Test Run
+
+```bash
+# Reduce epochs for fast testing
+python train_recon.py --num_epochs 1000 --eval_interval 500
+```
+
+---
+
+## 📈 Results and Analysis
+
+### Viewing Results
+
+After training, check:
+
+```bash
+# Training metrics
+cat ./outputs/recon/train.log
+
+# Evaluation metrics (CSV format)
+cat ./outputs/recon/evaluation.csv
+
+# Visualizations
+ls ./outputs/recon/plots/
+```
+
+### Mode Comparison
+
+Generate comparison tables and plots:
+
+```bash
+python run_mode_comparison.py
+
+# Creates:
+# - results_table_averaged.tex (mean ± std across seeds)
+# - results_table_seedwise.tex (individual seed results)
+# - Comparison plots
+```
+
+### Analyzing Results
+
+The `run_mode_comparison.py` script:
+- Aggregates results across multiple seeds
+- Computes mean ± standard deviation
+- Generates LaTeX tables for papers
+- Creates comparison visualizations
+
+**Output Format**:
+```
+Mode    | Training Loss | L1 Error        | L2 Error        | Geometry Metrics
+--------|---------------|-----------------|-----------------|------------------
+regress | l2           | 0.002 ± 0.000   | 0.003 ± 0.000   | ...
+flow    | l2           | 0.060 ± 0.009   | 0.072 ± 0.007   | ...
+mip     | l2           | 0.004 ± 0.000   | 0.005 ± 0.000   | ...
+```
+
+---
+
+## 🏗️ Project Structure
+
+```
+.
+├── config_recon.yaml          # Reconstruction config
+├── config_proj.yaml           # Projection config
+├── config_lie.yaml            # Lie algebra config
+├── train_recon.py             # Reconstruction training
+├── train_proj.py              # Projection training
+├── train_lie.py               # Lie algebra training
+├── run_mode_comparison.py     # Multi-seed analysis
+├── datasets.py                # Dataset implementations
+├── networks.py                # Neural network architectures
+├── losses.py                  # Loss functions
+├── integrate.py               # ODE integration
+├── logging_utils.py           # Logging utilities
+├── config.py                  # Configuration management
+├── utils.py                   # Utility functions
+└── outputs/                   # Experiment results
+```
+
+---
+
+## 🔬 Network Architectures
+
+### ConcatMLP
+Concatenation-based conditioning:
+```
+[x, c, t] → Linear → ReLU → ... → Linear → output
+```
+
+**When to use**: Default choice, simple and effective
+
+### FiLMMLP
+Feature-wise Linear Modulation:
+```
+x → Linear → FiLM(c, t) → ReLU → ... → output
+```
+
+**When to use**: When conditioning should modulate features rather than concatenate
+
+---
+
+## 📝 Evaluation Metrics
+
+### Reconstruction Metrics
+- **L1 Error**: `||f_θ(c) - f*(c)||₁`
+- **L2 Error**: `||f_θ(c) - f*(c)||₂`
+
+Measures how accurately the learned function approximates the true target.
+
+### Geometric Metrics (Projection)
+- **Average Angle**: Mean principal angle between learned and true subspaces
+- **Max Angle**: Worst-case subspace alignment
+- **Subspace Distance**: Distance from predictions to true subspace
+
+Measures whether outputs lie in correct low-dimensional subspaces.
+
+### Geometric Metrics (Lie Algebra)
+- **Cosine Similarity**: Alignment of learned vectors with manifold directions
+- **Perpendicular Error**: Distance from predictions to manifold
+- **Average/Min/Max** variants for each
+
+Measures whether outputs lie on the rotation manifold.
+
+---
+
+## 🎯 Method Selection Guide
+
+| Priority | Task Type | Recommended Method |
+|----------|-----------|-------------------|
+| Best reconstruction | Any | Regression-L2 |
+| Geometric constraints | Manifolds | MIP-L2 |
+| Balanced performance | Subspaces | MIP-L2 |
+| Exploratory | Novel problems | Flow-L2 (NFE=9) |
+
+### Loss Function Selection
+
+- **L2 training loss**: Better for matching L2 test metrics (recommended default)
+- **L1 training loss**: Occasionally provides better robustness
+
+---
+
+## 🔧 Troubleshooting
+
+### CUDA Out of Memory
+
+```yaml
+# Reduce batch size in config
+training:
+  batch_size: 16  # or 8
+
+# Or use CPU
+experiment:
+  device: "cpu"
+```
+
+### Poor Convergence
+
+```yaml
+# Try different learning rates
+training:
+  learning_rate: 0.0001  # Smaller
+  # or
+  learning_rate: 0.01    # Larger
+```
+
+### Missing Metrics
+
+Check that evaluation interval divides num_epochs:
+```yaml
+training:
+  num_epochs: 50000
+  eval_interval: 50000  # Must divide evenly!
+```
+
+### Flow Models Performing Poorly
+
+- Ensure sufficient ODE integration steps (NFE=9 recommended)
+- Check that `initial_dist: "zeros"` for evaluation
+- Try adjusting `mip_t_star` if using MIP mode
 
 ---
 
 ## 📚 Documentation
 
-- **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)**: Detailed project structure
-- **[RESULTS.md](RESULTS.md)**: Experimental results and analysis (TODO)
-- **Module docstrings**: Comprehensive inline documentation
+### Module Docstrings
+
+All modules have comprehensive inline documentation:
+
+```python
+# View dataset documentation
+python -c "import datasets; help(datasets.TargetFunctionDataset)"
+
+# View network documentation
+python -c "import networks; help(networks.ConcatMLP)"
+```
+
+### Testing Modules
+
+Run built-in tests:
+
+```bash
+# Test datasets
+python datasets.py
+
+# Test networks
+python networks.py
+
+# Test integration
+python integrate.py
+```
 
 ---
 
@@ -393,18 +505,18 @@ python toyexp/train_recon.py --config toyexp/configs/config_test.yaml
 
 Contributions welcome! Areas for improvement:
 
-- [ ] Additional architectures (Transformers, etc.)
+- [ ] Additional architectures (Transformers, attention mechanisms)
 - [ ] More sophisticated target functions
-- [ ] Advanced ODE solvers
-- [ ] Experiment tracking integration (Weights & Biases, MLflow)
-- [ ] Unit tests for all modules
-- [ ] More analysis tools
+- [ ] Advanced ODE solvers (adaptive step size)
+- [ ] Experiment tracking (Weights & Biases, MLflow)
+- [ ] Unit tests with pytest
+- [ ] More geometric constraints and metrics
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
 
 ---
 
@@ -413,6 +525,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 Built using:
 - [PyTorch](https://pytorch.org/) for deep learning
 - [NumPy](https://numpy.org/) for numerical computing
+- [SciPy](https://scipy.org/) for scientific computing
 - [Matplotlib](https://matplotlib.org/) for visualization
 - [PyYAML](https://pyyaml.org/) for configuration
 
@@ -420,34 +533,9 @@ Built using:
 
 ## 📧 Contact
 
-For questions or issues, please open an issue on GitHub or contact [your.email@example.com](mailto:your.email@example.com).
+For questions or issues, please open an issue on GitHub.
 
 ---
-
-## 🔗 Citation
-
-If you use this code in your research, please cite:
-
-```bibtex
-@software{toyexp2025,
-  title = {Toy Experiments: Regression vs Flow Models},
-  author = {Your Name},
-  year = {2025},
-  url = {https://github.com/yourusername/toyexp}
-}
-```
-
----
-
-## 📝 Changelog
-
-### v0.1.0 (2025-01-XX)
-- Initial release
-- Reconstruction and projection experiments
-- Regression and flow matching modes
-- Comprehensive configuration system
-- Command-line override support
-- Analysis tools
 
 ---
 
