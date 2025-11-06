@@ -1006,9 +1006,15 @@ def main(config_path: str, overrides: dict = None):
 
     validate_config(config)
 
-    # Build output directory with subdirectories for mode, loss_type, and seed
+    # Build output directory with subdirectories for mode, loss_type, architecture, and seed
     base_output_dir = Path(config.experiment.output_dir)
-    output_dir = base_output_dir / config.experiment.mode / config.training.loss_type / f"seed_{config.experiment.seed}"
+    output_dir = (
+        base_output_dir
+        / config.experiment.mode
+        / config.training.loss_type
+        / config.network.architecture
+        / f"seed_{config.experiment.seed}"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Setup logging

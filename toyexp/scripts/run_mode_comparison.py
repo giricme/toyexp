@@ -53,6 +53,9 @@ EXPERIMENT_CONFIGS = {
 # Seeds for multi-seed runs
 SEEDS = [0, 1, 2]
 
+# Architectures to compare
+ARCHITECTURES = ["concat", "film"]
+
 
 def setup_logging():
     """Setup logging for the batch wrapper."""
@@ -64,15 +67,16 @@ def setup_logging():
     return logging.getLogger(__name__)
 
 
-def run_training(module_name: str, config_path: str, mode: str, loss_type: str, seed: int, logger):
+def run_training(module_name: str, config_path: str, mode: str, loss_type: str, architecture: str, seed: int, logger):
     """
-    Run a single training job with specified mode, loss_type, and seed.
+    Run a single training job with specified mode, loss_type, architecture, and seed.
     
     Args:
         module_name: Full module name (e.g., 'toyexp.train_recon')
         config_path: Path to config file
         mode: Training mode (regression/flow/mip)
         loss_type: Loss type (l1/l2)
+        architecture: Network architecture (concat/film)
         seed: Random seed
         logger: Logger instance
         
@@ -80,7 +84,7 @@ def run_training(module_name: str, config_path: str, mode: str, loss_type: str, 
         bool: True if training completed successfully
     """
     logger.info("=" * 80)
-    logger.info(f"Starting training: mode={mode}, loss_type={loss_type}, seed={seed}")
+    logger.info(f"Starting training: mode={mode}, loss_type={loss_type}, architecture={architecture}, seed={seed}")
     logger.info("=" * 80)
     
     try:
@@ -91,6 +95,7 @@ def run_training(module_name: str, config_path: str, mode: str, loss_type: str, 
         overrides = {
             "experiment": {"mode": mode, "seed": seed},
             "training": {"loss_type": loss_type},
+            "network": {"architecture": architecture},
         }
         
         logger.info(f"Module: {module_name}")
@@ -100,18 +105,18 @@ def run_training(module_name: str, config_path: str, mode: str, loss_type: str, 
         # Call the main function with overrides
         train_module.main(config_path, overrides)
         
-        logger.info(f"Training completed successfully: mode={mode}, loss_type={loss_type}, seed={seed}")
+        logger.info(f"Training completed successfully: mode={mode}, loss_type={loss_type}, architecture={architecture}, seed={seed}")
         return True
         
     except Exception as e:
-        logger.error(f"Training failed: mode={mode}, loss_type={loss_type}, seed={seed}")
+        logger.error(f"Training failed: mode={mode}, loss_type={loss_type}, architecture={architecture}, seed={seed}")
         logger.error(f"Error: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
         return False
 
 
-def load_results(output_dir: Path, mode: str, loss_type: str, seed: int, logger):
+def load_results(output_dir: Path, mode: str, loss_type: str, architecture: str, seed: int, logger):
     """
     Load results from a completed training run.
     
@@ -119,14 +124,15 @@ def load_results(output_dir: Path, mode: str, loss_type: str, seed: int, logger)
         output_dir: Base output directory
         mode: Training mode
         loss_type: Loss type
+        architecture: Network architecture
         seed: Random seed
         logger: Logger instance
         
     Returns:
         dict: Metrics from best checkpoint, or None if not found
     """
-    # Results are saved in: output_dir / mode / loss_type / seed_X / checkpoints / final_model.pt
-    results_path = output_dir / mode / loss_type / f"seed_{seed}" / "checkpoints" / "final_model.pt"
+    # Results are saved in: output_dir / mode / loss_type / architecture / seed_X / checkpoints / final_model.pt
+    results_path = output_dir / mode / loss_type / architecture / f"seed_{seed}" / "checkpoints" / "final_model.pt"
     
     if not results_path.exists():
         logger.warning(f"Results not found: {results_path}")
@@ -154,11 +160,11 @@ def generate_latex_table(
     logger,
 ):
     """
-    Generate LaTeX tables comparing results across modes, loss types, and seeds.
+    Generate LaTeX tables comparing results across modes, loss types, architectures, and seeds.
     Creates two tables: one with individual seed results and one with averaged results.
     
     Args:
-        results: Dict mapping (mode, loss_type) -> list of metrics dicts (one per seed)
+        results: Dict mapping (mode, loss_type, architecture) -> list of metrics dicts (one per seed)
         experiment_type: Type of experiment (recon/proj/lie)
         save_dir: Directory where to save the LaTeX tables
         logger: Logger instance
@@ -209,43 +215,44 @@ def generate_latex_table(
     lines_seedwise = []
     lines_seedwise.append("\\begin{table}[h]")
     lines_seedwise.append("\\centering")
-    lines_seedwise.append("\\begin{tabular}{|l|l|c|" + "c|" * len(metric_names) + "}")
+    lines_seedwise.append("\\begin{tabular}{|l|l|l|c|" + "c|" * len(metric_names) + "}")
     lines_seedwise.append("\\hline")
     
     # Header row
-    header = "Mode & Loss & Seed & " + " & ".join(metric_names) + " \\\\"
+    header = "Mode & Loss & Arch & Seed & " + " & ".join(metric_names) + " \\\\"
     lines_seedwise.append(header)
     lines_seedwise.append("\\hline")
     
-    # Data rows - iterate through each mode, loss_type, and seed
+    # Data rows - iterate through each mode, loss_type, architecture, and seed
     for mode in modes:
         for loss_type in loss_types:
-            key = (mode, loss_type)
-            
-            if key not in results or results[key] is None:
-                # Missing results for all seeds - fill with dashes
-                for seed in SEEDS:
-                    values = ["---"] * len(metric_names)
-                    row = f"{mode} & {loss_type} & {seed} & " + " & ".join(values) + " \\\\"
-                    lines_seedwise.append(row)
-            else:
-                # Have results - show each seed
-                seed_metrics_list = results[key]
-                for seed_idx, seed in enumerate(SEEDS):
-                    if seed_idx < len(seed_metrics_list) and seed_metrics_list[seed_idx] is not None:
-                        metric_values = extract_metrics(seed_metrics_list[seed_idx])
-                        values = [f"{v:.6f}" if not np.isnan(v) else "---" for v in metric_values]
-                    else:
+            for architecture in ARCHITECTURES:
+                key = (mode, loss_type, architecture)
+                
+                if key not in results or results[key] is None:
+                    # Missing results for all seeds - fill with dashes
+                    for seed in SEEDS:
                         values = ["---"] * len(metric_names)
-                    
-                    row = f"{mode} & {loss_type} & {seed} & " + " & ".join(values) + " \\\\"
-                    lines_seedwise.append(row)
-            
-            lines_seedwise.append("\\hline")
+                        row = f"{mode} & {loss_type} & {architecture} & {seed} & " + " & ".join(values) + " \\\\"
+                        lines_seedwise.append(row)
+                else:
+                    # Have results - show each seed
+                    seed_metrics_list = results[key]
+                    for seed_idx, seed in enumerate(SEEDS):
+                        if seed_idx < len(seed_metrics_list) and seed_metrics_list[seed_idx] is not None:
+                            metric_values = extract_metrics(seed_metrics_list[seed_idx])
+                            values = [f"{v:.6f}" if not np.isnan(v) else "---" for v in metric_values]
+                        else:
+                            values = ["---"] * len(metric_names)
+                        
+                        row = f"{mode} & {loss_type} & {architecture} & {seed} & " + " & ".join(values) + " \\\\"
+                        lines_seedwise.append(row)
+                
+                lines_seedwise.append("\\hline")
     
     # Close table
     lines_seedwise.append("\\end{tabular}")
-    lines_seedwise.append(f"\\caption{{Seed-wise results for {experiment_type} experiment across modes and loss types}}")
+    lines_seedwise.append(f"\\caption{{Seed-wise results for {experiment_type} experiment across modes, loss types, and architectures}}")
     lines_seedwise.append(f"\\label{{tab:{experiment_type}_seedwise}}")
     lines_seedwise.append("\\end{table}")
     
@@ -260,57 +267,58 @@ def generate_latex_table(
     lines_avg = []
     lines_avg.append("\\begin{table}[h]")
     lines_avg.append("\\centering")
-    lines_avg.append("\\begin{tabular}{|l|l|" + "c|" * len(metric_names) + "}")
+    lines_avg.append("\\begin{tabular}{|l|l|l|" + "c|" * len(metric_names) + "}")
     lines_avg.append("\\hline")
     
     # Header row
-    header = "Mode & Loss & " + " & ".join(metric_names) + " \\\\"
+    header = "Mode & Loss & Arch & " + " & ".join(metric_names) + " \\\\"
     lines_avg.append(header)
     lines_avg.append("\\hline")
     
     # Data rows - average across seeds
     for mode in modes:
         for loss_type in loss_types:
-            key = (mode, loss_type)
-            
-            if key not in results or results[key] is None:
-                # Missing results
-                values = ["---"] * len(metric_names)
-            else:
-                seed_metrics_list = results[key]
+            for architecture in ARCHITECTURES:
+                key = (mode, loss_type, architecture)
                 
-                # Collect metrics across seeds
-                all_metrics = []
-                for seed_metrics in seed_metrics_list:
-                    if seed_metrics is not None:
-                        all_metrics.append(extract_metrics(seed_metrics))
-                
-                if len(all_metrics) == 0:
+                if key not in results or results[key] is None:
+                    # Missing results
                     values = ["---"] * len(metric_names)
                 else:
-                    # Convert to numpy array for easy computation
-                    all_metrics = np.array(all_metrics)  # shape: (num_seeds, num_metrics)
+                    seed_metrics_list = results[key]
                     
-                    # Compute mean and std for each metric
-                    means = np.nanmean(all_metrics, axis=0)
-                    stds = np.nanstd(all_metrics, axis=0)
+                    # Collect metrics across seeds
+                    all_metrics = []
+                    for seed_metrics in seed_metrics_list:
+                        if seed_metrics is not None:
+                            all_metrics.append(extract_metrics(seed_metrics))
                     
-                    # Format as "mean ± std"
-                    values = []
-                    for mean, std in zip(means, stds):
-                        if np.isnan(mean):
-                            values.append("---")
-                        else:
-                            values.append(f"{mean:.6f} $\\pm$ {std:.6f}")
-            
-            # Format row
-            row = f"{mode} & {loss_type} & " + " & ".join(values) + " \\\\"
-            lines_avg.append(row)
-            lines_avg.append("\\hline")
+                    if len(all_metrics) == 0:
+                        values = ["---"] * len(metric_names)
+                    else:
+                        # Convert to numpy array for easy computation
+                        all_metrics = np.array(all_metrics)  # shape: (num_seeds, num_metrics)
+                        
+                        # Compute mean and std for each metric
+                        means = np.nanmean(all_metrics, axis=0)
+                        stds = np.nanstd(all_metrics, axis=0)
+                        
+                        # Format as "mean ± std"
+                        values = []
+                        for mean, std in zip(means, stds):
+                            if np.isnan(mean):
+                                values.append("---")
+                            else:
+                                values.append(f"{mean:.6f} $\\pm$ {std:.6f}")
+                
+                # Format row
+                row = f"{mode} & {loss_type} & {architecture} & " + " & ".join(values) + " \\\\"
+                lines_avg.append(row)
+                lines_avg.append("\\hline")
     
     # Close table
     lines_avg.append("\\end{tabular}")
-    lines_avg.append(f"\\caption{{Averaged results (mean $\\pm$ std) for {experiment_type} experiment across modes and loss types}}")
+    lines_avg.append(f"\\caption{{Averaged results (mean $\\pm$ std) for {experiment_type} experiment across modes, loss types, and architectures}}")
     lines_avg.append(f"\\label{{tab:{experiment_type}_averaged}}")
     lines_avg.append("\\end{table}")
     
@@ -397,25 +405,27 @@ Examples:
     logger.info(f"Output directory: {base_output_dir}")
     logger.info("")
     
-    # Run training for each mode/loss_type/seed combination
+    # Run training for each mode/loss_type/architecture/seed combination
     if not args.skip_training:
         success_count = 0
-        total_count = len(exp_config["modes"]) * len(exp_config["loss_types"]) * len(SEEDS)
+        total_count = len(exp_config["modes"]) * len(exp_config["loss_types"]) * len(ARCHITECTURES) * len(SEEDS)
         
         for mode in exp_config["modes"]:
             for loss_type in exp_config["loss_types"]:
-                for seed in SEEDS:
-                    success = run_training(
-                        module_name,
-                        str(config_path),
-                        mode,
-                        loss_type,
-                        seed,
-                        logger,
-                    )
-                    if success:
-                        success_count += 1
-                    logger.info("")
+                for architecture in ARCHITECTURES:
+                    for seed in SEEDS:
+                        success = run_training(
+                            module_name,
+                            str(config_path),
+                            mode,
+                            loss_type,
+                            architecture,
+                            seed,
+                            logger,
+                        )
+                        if success:
+                            success_count += 1
+                        logger.info("")
         
         logger.info("=" * 80)
         logger.info(f"Training Summary: {success_count}/{total_count} completed successfully")
@@ -425,7 +435,7 @@ Examples:
         logger.info("Skipping training (--skip-training flag set)")
         logger.info("")
     
-    # Load all results (all seeds for each mode/loss_type)
+    # Load all results (all seeds for each mode/loss_type/architecture)
     logger.info("=" * 80)
     logger.info("Loading results")
     logger.info("=" * 80)
@@ -433,14 +443,15 @@ Examples:
     results = {}
     for mode in exp_config["modes"]:
         for loss_type in exp_config["loss_types"]:
-            # Collect metrics for all seeds
-            seed_metrics_list = []
-            for seed in SEEDS:
-                metrics = load_results(base_output_dir, mode, loss_type, seed, logger)
-                seed_metrics_list.append(metrics)
-                logger.info("")
-            
-            results[(mode, loss_type)] = seed_metrics_list
+            for architecture in ARCHITECTURES:
+                # Collect metrics for all seeds
+                seed_metrics_list = []
+                for seed in SEEDS:
+                    metrics = load_results(base_output_dir, mode, loss_type, architecture, seed, logger)
+                    seed_metrics_list.append(metrics)
+                    logger.info("")
+                
+                results[(mode, loss_type, architecture)] = seed_metrics_list
     
     # Generate LaTeX tables
     generate_latex_table(results, args.experiment, base_output_dir, logger)
