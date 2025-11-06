@@ -265,6 +265,7 @@ def evaluate(model, dataset, device, config):
                 n_steps=nfe,
                 method=config.evaluation.integration_method,
                 mode=config.experiment.mode,
+                mip_t_star=config.training.get("mip_t_star", 0.9),
             )
 
             x_pred = x_pred.cpu().numpy()

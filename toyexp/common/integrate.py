@@ -171,6 +171,16 @@ def integrate(
             a_hat = model(a_0_hat, c, t_star)
             
             return a_hat
+        
+    elif mode == "mip_one_step_integrate":
+        # One-step MIP inference (return after step 1)
+        batch_size = x_0.shape[0]
+        device = x_0.device
+        t_zero = torch.zeros(batch_size, 1, device=device)
+        
+        with torch.no_grad():
+            a_0_hat = model(x_0, c, t_zero)
+            return a_0_hat
 
     elif mode == "flow":
         if method == "euler":

@@ -25,19 +25,19 @@ import yaml
 EXPERIMENT_CONFIGS = {
     "recon": {
         "module": "toyexp.scripts.train_recon",
-        "modes": ["regression", "flow", "mip"],
+        "modes": ["mip_one_step_integrate", "regression", "flow", "mip"],
         "loss_types": ["l1", "l2"],
         "metrics": ["L1", "L2"],
     },
     "proj": {
         "module": "toyexp.scripts.train_proj",
-        "modes": ["regression", "flow", "mip"],
+        "modes": ["regression", "flow", "mip", "mip_one_step_integrate"],
         "loss_types": ["l1", "l2"],
         "metrics": ["L1", "L2", "Subspace Diag", "Subspace Off-Diag", "Boundary"],
     },
     "lie": {
         "module": "toyexp.scripts.train_lie",
-        "modes": ["regression", "flow", "mip"],
+        "modes": ["regression", "flow", "mip", "mip_one_step_integrate"],
         "loss_types": ["l1", "l2"],
         "metrics": [
             "L1",
