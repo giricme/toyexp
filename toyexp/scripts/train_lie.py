@@ -213,7 +213,7 @@ def compute_perpendicular_projection_error(
     # Normalize manifold vector
     v_m_hat = v_m / norm_manifold
 
-    # Project prediction onto manifold direction: P v_p = (v_m_hat · v_p) v_m_hat
+    # Project prediction onto manifold direction: P v_p = (v_m_hat Â· v_p) v_m_hat
     projection = np.dot(v_m_hat, v_p) * v_m_hat
 
     # Compute perpendicular component: (I - P) v_p = v_p - P v_p
@@ -381,9 +381,9 @@ def main(config_path: str, overrides: dict = None):
 
     validate_config(config)
 
-    # Build output directory with subdirectories for mode and loss_type
+    # Build output directory with subdirectories for mode, loss_type, and seed
     base_output_dir = Path(config.experiment.output_dir)
-    output_dir = base_output_dir / config.experiment.mode / config.training.loss_type
+    output_dir = base_output_dir / config.experiment.mode / config.training.loss_type / f"seed_{config.experiment.seed}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Setup logging

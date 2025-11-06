@@ -1006,9 +1006,9 @@ def main(config_path: str, overrides: dict = None):
 
     validate_config(config)
 
-    # Build output directory with subdirectories for mode and loss_type
+    # Build output directory with subdirectories for mode, loss_type, and seed
     base_output_dir = Path(config.experiment.output_dir)
-    output_dir = base_output_dir / config.experiment.mode / config.training.loss_type
+    output_dir = base_output_dir / config.experiment.mode / config.training.loss_type / f"seed_{config.experiment.seed}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Setup logging
@@ -1111,19 +1111,16 @@ def main(config_path: str, overrides: dict = None):
                 }
                 log_evaluation(metrics_for_logging, prefix=f"Epoch {epoch + 1}")
 
-                # Log to CSV (include all metrics except internal ones starting with _)
-                csv_metrics = {
-                    "epoch": epoch + 1,
-                    "nfe": metrics["nfe"],
-                    "l1_error": metrics["l1_error"],
-                    "l2_error": metrics["l2_error"],
-                }
-                # Add subspace metrics if present
-                for key in ["subspace_diagonal_mean_4", "subspace_off_diagonal_mean_4", "boundary_mean_2"]:
-                    if key in metrics:
-                        csv_metrics[key] = metrics[key]
-                
-                metrics_logger.log("evaluation", csv_metrics)
+                # Log to CSV
+                metrics_logger.log(
+                    "evaluation",
+                    {
+                        "epoch": epoch + 1,
+                        "nfe": metrics["nfe"],
+                        "l1_error": metrics["l1_error"],
+                        "l2_error": metrics["l2_error"],
+                    },
+                )
 
             # Save best model (using first NFE for tracking)
             first_metrics = results[0][0]
