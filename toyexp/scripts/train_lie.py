@@ -118,7 +118,7 @@ def train_epoch(model, dataloader, loss_manager, optimizer, device, config):
         # Compute loss
         if config.experiment.mode == "regression":
             loss = loss_manager.compute_loss(model, c, x_1)
-        elif config.experiment.mode == "mip":
+        elif config.experiment.mode in ["mip", "mip_one_step_integrate"]:
             # MIP mode: needs x_0, x_1, c (no t sampled)
             # Initial distribution
             if config.training.initial_dist == "gaussian":

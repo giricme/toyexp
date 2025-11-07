@@ -243,9 +243,9 @@ class LossManager:
         component_dim: Optional[int] = None,
         mip_t_star: float = 0.9,
     ):
-        if mode not in ["regression", "flow", "mip"]:
+        if mode not in ["regression", "flow", "mip", "mip_one_step_integrate"]:
             raise ValueError(
-                f"Unknown mode: {mode}. Choose 'regression', 'flow', or 'mip'"
+                f"Unknown mode: {mode}. Choose 'regression', 'flow', or 'mip' or 'mip_one_step_integrate'"
             )
 
         if loss_type not in ["l1", "l2"]:
@@ -333,7 +333,7 @@ class LossManager:
             else:  # per_component
                 return self._per_component_flow_loss(model, x_0, x_1, c, t)
 
-        elif self.mode == "mip":
+        elif self.mode in ["mip", "mip_one_step_integrate"]:
             if len(args) != 3:
                 raise ValueError(
                     f"MIP mode expects 3 args (x_0, x_1, c), got {len(args)}"
