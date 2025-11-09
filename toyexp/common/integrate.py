@@ -143,7 +143,7 @@ def integrate(
         method: 'euler' or 'rk4' (ignored in regression/mip modes)
         t_start: Start time (ignored in regression/mip modes)
         t_end: End time (ignored in regression/mip modes)
-        mode: 'flow', 'regression', or 'mip'
+        mode: 'flow', 'straight_flow', 'regression', 'mip', or 'mip_one_step_integrate'
         mip_t_star: Time value for MIP second step (default 0.9)
 
     Returns:
@@ -162,22 +162,22 @@ def integrate(
         device = x_0.device
         t_zero = torch.zeros(batch_size, 1, device=device)
         t_star = torch.full((batch_size, 1), mip_t_star, device=device)
-        
+
         with torch.no_grad():
             # Step 1: Initial prediction at t=0
             a_0_hat = model(x_0, c, t_zero)
-            
+
             # Step 2: Final prediction at t=t* using a_0_hat
             a_hat = model(a_0_hat, c, t_star)
-            
+
             return a_hat
-        
+
     elif mode == "mip_one_step_integrate":
         # One-step MIP inference (return after step 1)
         batch_size = x_0.shape[0]
         device = x_0.device
         t_zero = torch.zeros(batch_size, 1, device=device)
-        
+
         with torch.no_grad():
             a_0_hat = model(x_0, c, t_zero)
             return a_0_hat
@@ -192,8 +192,36 @@ def integrate(
                 f"Unknown integration method: {method}. Choose 'euler' or 'rk4'"
             )
 
+    elif mode == "straight_flow":
+        # For straight_flow, use custom ODE stepping with t always set to 0
+        # Model predicts x_1 directly (not velocity)
+        batch_size = x_0.shape[0]
+        device = x_0.device
+
+        # Time grid
+        ts = torch.linspace(t_start, t_end, n_steps + 1, device=device)
+
+        with torch.no_grad():
+            x_t = x_0
+            t_zero = torch.zeros(batch_size, 1, device=device)
+
+            for i in range(n_steps):
+                s = ts[i].item()
+                t = ts[i + 1].item()
+
+                # Query model with t=0 (no time conditioning)
+                x_s = x_t
+                x_1_pred = model(x_s, c, t_zero)
+
+                # ODE step: x_t = (1-t)/(1-s) * x_s + (t-s)/(1-s) * x_1_pred
+                x_t = ((1 - t) / (1 - s)) * x_s + ((t - s) / (1 - s)) * x_1_pred
+
+            return x_t
+
     else:
-        raise ValueError(f"Unknown mode: {mode}. Choose 'flow', 'regression', or 'mip'")
+        raise ValueError(
+            f"Unknown mode: {mode}. Choose 'flow', 'straight_flow', 'regression', 'mip', or 'mip_one_step_integrate'"
+        )
 
 
 def integrate_with_trajectory(

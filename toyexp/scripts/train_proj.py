@@ -97,7 +97,7 @@ def train_epoch(model, dataloader, loss_manager, optimizer, device, config):
                 x_0 = torch.zeros_like(x_1)
 
             loss = loss_manager.compute_loss(model, x_0, x_1, c)
-        else:  # flow
+        elif config.experiment.mode in ["flow", "straight_flow"]:
             # Sample time uniformly
             batch_size = c.shape[0]
             t = torch.rand(batch_size, 1, device=device)
@@ -109,6 +109,8 @@ def train_epoch(model, dataloader, loss_manager, optimizer, device, config):
                 x_0 = torch.zeros_like(x_1)
 
             loss = loss_manager.compute_loss(model, x_0, x_1, c, t)
+        else:
+            raise ValueError(f"Unknown mode: {config.experiment.mode}")
 
         # Optimization step
         optimizer.zero_grad()
@@ -1166,7 +1168,9 @@ def main(config_path: str, overrides: dict = None):
     # Log all NFE results
     for metrics, plot_data in results:
         # Filter out numpy arrays from logging (keep them for plotting)
-        metrics_for_logging = {k: v for k, v in metrics.items() if not k.startswith("_")}
+        metrics_for_logging = {
+            k: v for k, v in metrics.items() if not k.startswith("_")
+        }
         log_evaluation(metrics_for_logging, prefix="Final")
 
     # Create plots
@@ -1183,7 +1187,7 @@ def main(config_path: str, overrides: dict = None):
     # Create plots for each NFE
     for metrics, plot_data in results:
         nfe = metrics["nfe"]
-        
+
         # Multi-dimension predictions grid
         plot_predictions_grid(
             c_values=plot_data["c_values"],

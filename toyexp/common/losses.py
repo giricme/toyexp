@@ -4,6 +4,7 @@ Loss functions for toy experiments.
 Provides simple loss functions for:
 - Regression: L1 and L2 reconstruction losses
 - Flow: Flow matching loss for learning velocity fields
+- Straight Flow: Predict x_1 from interpolated states without time conditioning
 """
 
 import logging
@@ -91,6 +92,57 @@ def flow_matching_loss(
         raise ValueError(f"Unknown loss_type: {loss_type}. Choose 'l1' or 'l2'")
 
 
+def straight_flow_loss(
+    model: nn.Module,
+    x_0: torch.Tensor,
+    x_1: torch.Tensor,
+    c: torch.Tensor,
+    t: torch.Tensor,
+    loss_type: str = "l2",
+) -> torch.Tensor:
+    """
+    Straight flow loss - predict x_1 from interpolated x_t without time conditioning.
+
+    Similar to flow matching but:
+    1. Model predicts x_1 directly (not velocity)
+    2. Time is always set to 0 when querying the model
+
+    This is an ablation to test whether time conditioning is necessary.
+    The model must learn a single function that works for inputs from
+    any point along the interpolation path [0, 1].
+
+    Args:
+        model: Model that predicts x_1 from (x_t, c, t)
+        x_0: [batch, dim] initial state (typically noise or zeros)
+        x_1: [batch, dim] target state
+        c: [batch, c_dim] conditioning variable
+        t: [batch, 1] time values in [0, 1] (used for interpolation, not passed to model)
+        loss_type: 'l1' or 'l2'
+
+    Returns:
+        scalar loss
+    """
+    batch_size = x_0.shape[0]
+    device = x_0.device
+
+    # Compute interpolated state (using actual t for interpolation)
+    x_t = (1 - t) * x_0 + t * x_1
+
+    # Always query model with t=0 (no time conditioning)
+    t_zero = torch.zeros(batch_size, 1, device=device)
+
+    # Predict x_1 directly
+    x_1_pred = model(x_t, c, t_zero)
+
+    # Compute loss
+    if loss_type == "l1":
+        return l1_loss(x_1_pred, x_1)
+    elif loss_type == "l2":
+        return l2_loss(x_1_pred, x_1)
+    else:
+        raise ValueError(f"Unknown loss_type: {loss_type}. Choose 'l1' or 'l2'")
+
+
 def regression_loss(
     model: nn.Module,
     c: torch.Tensor,
@@ -169,7 +221,7 @@ def mip_loss(
     # Term 1: Regression from zeros at t=0
     t_zero = torch.zeros(batch_size, 1, device=device)
     pred_from_zero = model(x_0, c, t_zero)
-    
+
     # Term 2: Denoising at t=t*
     t_star_tensor = torch.full((batch_size, 1), t_star, device=device)
     x_t_star = (1 - t_star) * x_0 + t_star * x_1
@@ -194,12 +246,12 @@ class LossManager:
     Manager for computing losses with automatic mode detection.
 
     Simplifies loss computation by automatically selecting the appropriate
-    loss function based on training mode (regression vs flow vs mip).
+    loss function based on training mode (regression vs flow vs straight_flow vs mip).
 
     Supports per-component loss aggregation for Lie algebra datasets.
 
     Args:
-        mode: 'regression', 'flow', or 'mip'
+        mode: 'regression', 'flow', 'straight_flow', 'mip', or 'mip_one_step_integrate'
         loss_type: 'l1' or 'l2' (applies to all modes)
         x_dim: Dimension of x (for creating zero placeholders in regression)
         loss_aggregation: 'full' or 'per_component' (for Lie datasets)
@@ -210,6 +262,9 @@ class LossManager:
     Usage:
         # Standard usage (full aggregation)
         loss_manager = LossManager(mode='flow', loss_type='l2', x_dim=8)
+
+        # Straight flow mode (ablation without time conditioning)
+        loss_manager = LossManager(mode='straight_flow', loss_type='l2', x_dim=8)
 
         # MIP mode with custom t*
         loss_manager = LossManager(mode='mip', loss_type='l1', x_dim=8, mip_t_star=0.9)
@@ -227,9 +282,9 @@ class LossManager:
         # In training loop
         if mode == 'regression':
             loss = loss_manager.compute_loss(model, c, target)
-        elif mode == 'flow':
+        elif mode in ['flow', 'straight_flow']:
             loss = loss_manager.compute_loss(model, x_0, x_1, c, t)
-        elif mode == 'mip':
+        elif mode in ['mip', 'mip_one_step_integrate']:
             loss = loss_manager.compute_loss(model, x_0, x_1, c)
     """
 
@@ -243,15 +298,18 @@ class LossManager:
         component_dim: Optional[int] = None,
         mip_t_star: float = 0.9,
     ):
-        if mode not in ["regression", "flow", "mip", "mip_one_step_integrate"]:
-            raise ValueError(
-                f"Unknown mode: {mode}. Choose 'regression', 'flow', or 'mip' or 'mip_one_step_integrate'"
-            )
+        valid_modes = [
+            "regression",
+            "flow",
+            "straight_flow",
+            "mip",
+            "mip_one_step_integrate",
+        ]
+        if mode not in valid_modes:
+            raise ValueError(f"Unknown mode: {mode}. Choose from {valid_modes}")
 
         if loss_type not in ["l1", "l2"]:
-            raise ValueError(
-                f"Unknown loss_type: {loss_type}. Choose 'l1' or 'l2'"
-            )
+            raise ValueError(f"Unknown loss_type: {loss_type}. Choose 'l1' or 'l2'")
 
         if mode == "regression" and x_dim is None:
             raise ValueError("x_dim must be specified for regression mode")
@@ -303,7 +361,7 @@ class LossManager:
         For regression mode:
             compute_loss(model, c, target)
 
-        For flow mode:
+        For flow/straight_flow mode:
             compute_loss(model, x_0, x_1, c, t)
 
         For mip mode:
@@ -332,6 +390,18 @@ class LossManager:
                 return flow_matching_loss(model, x_0, x_1, c, t, self.loss_type)
             else:  # per_component
                 return self._per_component_flow_loss(model, x_0, x_1, c, t)
+
+        elif self.mode == "straight_flow":
+            if len(args) != 4:
+                raise ValueError(
+                    f"Straight flow mode expects 4 args (x_0, x_1, c, t), got {len(args)}"
+                )
+            x_0, x_1, c, t = args
+
+            if self.loss_aggregation == "full":
+                return straight_flow_loss(model, x_0, x_1, c, t, self.loss_type)
+            else:  # per_component
+                return self._per_component_straight_flow_loss(model, x_0, x_1, c, t)
 
         elif self.mode in ["mip", "mip_one_step_integrate"]:
             if len(args) != 3:
@@ -432,7 +502,55 @@ class LossManager:
                 loss_k = l2_loss(v_pred_k, v_true_k)
             else:
                 raise ValueError(f"Unknown loss_type: {self.loss_type}")
-            
+
+            component_losses.append(loss_k)
+
+        # Sum losses across components
+        return sum(component_losses)
+
+    def _per_component_straight_flow_loss(
+        self,
+        model: nn.Module,
+        x_0: torch.Tensor,
+        x_1: torch.Tensor,
+        c: torch.Tensor,
+        t: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute per-component straight flow loss and aggregate.
+
+        x_0, x_1 shape: [batch, K * dim]
+        Split into K components of dim each, compute loss separately, then sum.
+        """
+        batch_size = x_0.shape[0]
+        device = x_0.device
+
+        # Interpolate
+        x_t = (1 - t) * x_0 + t * x_1
+
+        # Always query with t=0
+        t_zero = torch.zeros(batch_size, 1, device=device)
+
+        # Predict x_1 directly
+        x_1_pred = model(x_t, c, t_zero)  # [batch, K * dim]
+
+        # Reshape to [batch, K, dim]
+        x_1_pred = x_1_pred.reshape(batch_size, self.num_components, self.component_dim)
+        x_1_reshaped = x_1.reshape(batch_size, self.num_components, self.component_dim)
+
+        # Compute loss for each component
+        component_losses = []
+        for k in range(self.num_components):
+            pred_k = x_1_pred[:, k, :]  # [batch, dim]
+            target_k = x_1_reshaped[:, k, :]  # [batch, dim]
+
+            if self.loss_type == "l1":
+                loss_k = l1_loss(pred_k, target_k)
+            elif self.loss_type == "l2":
+                loss_k = l2_loss(pred_k, target_k)
+            else:
+                raise ValueError(f"Unknown loss_type: {self.loss_type}")
+
             component_losses.append(loss_k)
 
         # Sum losses across components
@@ -492,7 +610,7 @@ class LossManager:
                 denoising_loss_k = l2_loss(pred_noisy_k, target_k)
             else:
                 raise ValueError(f"Unknown loss_type: {self.loss_type}")
-            
+
             loss_k = regression_loss_k + denoising_loss_k
             component_losses.append(loss_k)
 
@@ -529,7 +647,7 @@ if __name__ == "__main__":
     loss_l2 = l2_loss(pred, target)
     logger.info(f"L1 loss: {loss_l1.item():.6f}")
     logger.info(f"L2 loss: {loss_l2.item():.6f}")
-    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Basic losses work")
+    logger.info("✓ Basic losses work")
 
     # Test flow matching loss
     logger.info("\n=== Test 2: Flow matching loss ===")
@@ -546,10 +664,16 @@ if __name__ == "__main__":
 
     loss_flow = flow_matching_loss(model, x_0, x_1, c, t)
     logger.info(f"Flow matching loss: {loss_flow.item():.6f}")
-    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Flow matching loss works")
+    logger.info("✓ Flow matching loss works")
+
+    # Test straight flow loss
+    logger.info("\n=== Test 3: Straight flow loss ===")
+    loss_straight = straight_flow_loss(model, x_0, x_1, c, t)
+    logger.info(f"Straight flow loss: {loss_straight.item():.6f}")
+    logger.info("✓ Straight flow loss works")
 
     # Test regression loss
-    logger.info("\n=== Test 3: Regression loss ===")
+    logger.info("\n=== Test 4: Regression loss ===")
     model_reg = create_model(
         architecture="concat",
         x_dim=dim,
@@ -565,26 +689,36 @@ if __name__ == "__main__":
     loss_reg_l2 = regression_loss(model_reg, c, target, x_dim=dim, loss_type="l2")
     logger.info(f"Regression L1 loss: {loss_reg_l1.item():.6f}")
     logger.info(f"Regression L2 loss: {loss_reg_l2.item():.6f}")
-    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Regression losses work")
+    logger.info("✓ Regression losses work")
 
     # Test LossManager (regression mode)
-    logger.info("\n=== Test 4: LossManager (regression mode) ===")
+    logger.info("\n=== Test 5: LossManager (regression mode) ===")
     loss_manager_reg = LossManager(mode="regression", loss_type="l2", x_dim=dim)
     loss_managed = loss_manager_reg.compute_loss(model_reg, c, target)
     logger.info(f"LossManager (regression): {loss_managed.item():.6f}")
     logger.info(f"Matches direct call: {torch.allclose(loss_managed, loss_reg_l2)}")
-    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ LossManager works in regression mode")
+    logger.info("✓ LossManager works in regression mode")
 
     # Test LossManager (flow mode)
-    logger.info("\n=== Test 5: LossManager (flow mode) ===")
+    logger.info("\n=== Test 6: LossManager (flow mode) ===")
     loss_manager_flow = LossManager(mode="flow", x_dim=dim)
     loss_managed_flow = loss_manager_flow.compute_loss(model, x_0, x_1, c, t)
     logger.info(f"LossManager (flow): {loss_managed_flow.item():.6f}")
     logger.info(f"Matches direct call: {torch.allclose(loss_managed_flow, loss_flow)}")
-    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ LossManager works in flow mode")
+    logger.info("✓ LossManager works in flow mode")
+
+    # Test LossManager (straight_flow mode)
+    logger.info("\n=== Test 7: LossManager (straight_flow mode) ===")
+    loss_manager_straight = LossManager(mode="straight_flow", x_dim=dim)
+    loss_managed_straight = loss_manager_straight.compute_loss(model, x_0, x_1, c, t)
+    logger.info(f"LossManager (straight_flow): {loss_managed_straight.item():.6f}")
+    logger.info(
+        f"Matches direct call: {torch.allclose(loss_managed_straight, loss_straight)}"
+    )
+    logger.info("✓ LossManager works in straight_flow mode")
 
     # Test gradient flow
-    logger.info("\n=== Test 6: Gradient flow ===")
+    logger.info("\n=== Test 8: Gradient flow ===")
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     loss = flow_matching_loss(model, x_0, x_1, c, t)
@@ -597,8 +731,8 @@ if __name__ == "__main__":
     loss_after = flow_matching_loss(model, x_0, x_1, c, t)
     logger.info(f"Loss after 1 step: {loss_after.item():.6f}")
     logger.info(f"Loss changed: {loss_after.item() != loss.item()}")
-    logger.info("ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Gradients flow correctly")
+    logger.info("✓ Gradients flow correctly")
 
     logger.info("\n" + "=" * 60)
-    logger.info("All loss tests passed! ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“")
+    logger.info("All loss tests passed! ✓")
     logger.info("=" * 60)
