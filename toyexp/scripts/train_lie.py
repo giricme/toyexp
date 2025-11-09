@@ -127,7 +127,7 @@ def train_epoch(model, dataloader, loss_manager, optimizer, device, config):
                 x_0 = torch.zeros_like(x_1)
 
             loss = loss_manager.compute_loss(model, x_0, x_1, c)
-        else:  # flow
+        elif config.experiment.mode in ["flow", "straight_flow"]:
             # Sample time uniformly
             batch_size = c.shape[0]
             t = torch.rand(batch_size, 1, device=device)
@@ -139,6 +139,8 @@ def train_epoch(model, dataloader, loss_manager, optimizer, device, config):
                 x_0 = torch.zeros_like(x_1)
 
             loss = loss_manager.compute_loss(model, x_0, x_1, c, t)
+        else:
+            raise ValueError(f"Unknown mode: {config.experiment.mode}")
 
         # Optimization step
         optimizer.zero_grad()
@@ -224,8 +226,6 @@ def compute_perpendicular_projection_error(
     ratio = perp_norm / norm_pred
 
     return ratio
-
-
 
 
 def evaluate(model, dataset, device, config):
@@ -343,7 +343,9 @@ def evaluate(model, dataset, device, config):
                 logger.info(f"Per-component perpendicular errors (NFE={nfe}):")
                 for k, perp_err in enumerate(perp_errors):
                     alpha_k = dataset.alpha_velocities[k]
-                    logger.info(f"  Component {k} (alpha={alpha_k:.4f}): {perp_err:.6f}")
+                    logger.info(
+                        f"  Component {k} (alpha={alpha_k:.4f}): {perp_err:.6f}"
+                    )
 
             # Prepare data for plotting - include ALL components
             K = dataset.num_rotations
@@ -369,7 +371,6 @@ def evaluate(model, dataset, device, config):
             results.append((metrics, plot_data))
 
     return results
-
 
 
 def main(config_path: str, overrides: dict = None):
@@ -502,7 +503,7 @@ def main(config_path: str, overrides: dict = None):
         # Evaluate
         if (epoch + 1) % config.training.eval_interval == 0:
             results = evaluate(model, train_dataset, device, config)
-            
+
             # Log all NFE results
             for metrics, plot_data in results:
                 log_evaluation(metrics, prefix=f"Epoch {epoch + 1}")
@@ -596,7 +597,7 @@ def main(config_path: str, overrides: dict = None):
     logger.info("=" * 80)
 
     results = evaluate(model, train_dataset, device, config)
-    
+
     # Log all NFE results
     for metrics, plot_data in results:
         log_evaluation(metrics, prefix="Final Results")
@@ -615,7 +616,7 @@ def main(config_path: str, overrides: dict = None):
     # Create plots for EACH NFE
     for metrics, plot_data in results:
         nfe = metrics["nfe"]
-        
+
         # =========================================================================
         # Grid Visualizations - All Components
         # =========================================================================
@@ -649,8 +650,12 @@ def main(config_path: str, overrides: dict = None):
                 true_vals = x_true_all[:, k, 0]  # First element
                 pred_vals = x_pred_all[:, k, 0]
 
-                ax.scatter(c_values, true_vals, alpha=0.6, s=10, label="True", color="blue")
-                ax.scatter(c_values, pred_vals, alpha=0.6, s=10, label="Pred", color="red")
+                ax.scatter(
+                    c_values, true_vals, alpha=0.6, s=10, label="True", color="blue"
+                )
+                ax.scatter(
+                    c_values, pred_vals, alpha=0.6, s=10, label="Pred", color="red"
+                )
                 ax.set_xlabel("c", fontsize=9)
                 ax.set_ylabel(f"f_{k}[0]", fontsize=9)
                 ax.set_title(rf"Comp {k} ($\alpha$={alpha_k:.3f})", fontsize=10)
@@ -792,7 +797,9 @@ def main(config_path: str, overrides: dict = None):
 
             # Grid plot - cosine similarity per component
             if K <= 12:
-                fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+                fig, axes = plt.subplots(
+                    n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows)
+                )
                 if K == 1:
                     axes = np.array([[axes]])
                 elif n_rows == 1:
@@ -837,7 +844,9 @@ def main(config_path: str, overrides: dict = None):
                     axes[row, col].axis("off")
 
                 plt.tight_layout()
-                save_path = plots_dir / f"cosine_similarity_all_components_grid_nfe{nfe}.png"
+                save_path = (
+                    plots_dir / f"cosine_similarity_all_components_grid_nfe{nfe}.png"
+                )
                 fig.savefig(save_path, dpi=150, bbox_inches="tight")
                 logger.info(f"Saved cosine similarity grid to {save_path}")
                 plt.close(fig)
@@ -884,7 +893,9 @@ def main(config_path: str, overrides: dict = None):
 
             # Grid plot - perpendicular error per component
             if K <= 12:
-                fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+                fig, axes = plt.subplots(
+                    n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows)
+                )
                 if K == 1:
                     axes = np.array([[axes]])
                 elif n_rows == 1:
@@ -929,7 +940,9 @@ def main(config_path: str, overrides: dict = None):
                     axes[row, col].axis("off")
 
                 plt.tight_layout()
-                save_path = plots_dir / f"perpendicular_error_all_components_grid_nfe{nfe}.png"
+                save_path = (
+                    plots_dir / f"perpendicular_error_all_components_grid_nfe{nfe}.png"
+                )
                 fig.savefig(save_path, dpi=150, bbox_inches="tight")
                 logger.info(f"Saved perpendicular error grid to {save_path}")
                 plt.close(fig)

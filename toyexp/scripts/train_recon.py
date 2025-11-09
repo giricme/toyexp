@@ -91,7 +91,7 @@ def train_epoch(model, dataloader, loss_manager, optimizer, device, config):
                 x_0 = torch.zeros_like(x_1)
 
             loss = loss_manager.compute_loss(model, x_0, x_1, c)
-        else:  # flow
+        elif config.experiment.mode in ["flow", "straight_flow"]:
             # Sample time uniformly
             batch_size = c.shape[0]
             t = torch.rand(batch_size, 1, device=device)
@@ -103,6 +103,8 @@ def train_epoch(model, dataloader, loss_manager, optimizer, device, config):
                 x_0 = torch.zeros_like(x_1)
 
             loss = loss_manager.compute_loss(model, x_0, x_1, c, t)
+        else:
+            raise ValueError(f"Unknown mode: {config.experiment.mode}")
 
         # Optimization step
         optimizer.zero_grad()
@@ -292,7 +294,7 @@ def main(config_path: str, overrides: dict = None):
         # Evaluate
         if (epoch + 1) % config.training.eval_interval == 0:
             results = evaluate(model, train_dataset, device, config)
-            
+
             # Log all NFE results
             for metrics, plot_data in results:
                 log_evaluation(metrics, prefix=f"Epoch {epoch + 1}")
@@ -339,7 +341,7 @@ def main(config_path: str, overrides: dict = None):
     logger.info("=" * 80)
 
     results = evaluate(model, train_dataset, device, config)
-    
+
     # Log all NFE results
     for metrics, plot_data in results:
         log_evaluation(metrics, prefix="Final")
@@ -358,7 +360,7 @@ def main(config_path: str, overrides: dict = None):
     # Create plots for each NFE
     for metrics, plot_data in results:
         nfe = metrics["nfe"]
-        
+
         # Predictions
         plot_predictions(
             plot_data["c_values"],

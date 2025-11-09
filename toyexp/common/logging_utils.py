@@ -386,4 +386,3 @@ def create_metrics_logger(
         ml.add_logger("evaluation", ["epoch", "nfe", "l1_error", "l2_error"])
 
     return ml
-
